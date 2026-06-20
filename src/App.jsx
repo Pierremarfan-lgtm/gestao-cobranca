@@ -1,4 +1,18 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+
+// ─── FIREBASE ────────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyBBfsgtc7ipRkxKc8KyFaLg0sktP7l78WI",
+  authDomain: "spazzio-professional.firebaseapp.com",
+  projectId: "spazzio-professional",
+  storageBucket: "spazzio-professional.firebasestorage.app",
+  messagingSenderId: "1011918585363",
+  appId: "1:1011918585363:web:165ea97e83ab1ab94049e6"
+};
+const fbApp = initializeApp(firebaseConfig);
+const db    = getFirestore(fbApp);
 
 // ─── HOOK RESPONSIVO ─────────────────────────────────────────────────────────
 function useIsMobile() {
@@ -133,6 +147,43 @@ export default function App() {
   const [modalOpen, setModalOpen]   = useState(false);
   const [modalTab, setModalTab]     = useState("pagamento");
   const [form, setForm]             = useState({});
+  const [carregando, setCarregando] = useState(true);
+
+  // ── Carrega dados do Firebase ──
+  useEffect(() => {
+    async function carregar() {
+      try {
+        const snap = await getDoc(doc(db, "cobranca-viviane", "dados"));
+        if (snap.exists()) {
+          const dados = snap.data().clientes;
+          setClientes(CLIENTES_RAW.map(c => {
+            const salvo = dados.find(s => s.id === c.id);
+            return salvo ? { ...c, saldo:salvo.saldo, ocorrencias:salvo.ocorrencias||[], pagamentos:salvo.pagamentos||[] } : { ...c, ocorrencias:[], pagamentos:[] };
+          }));
+        }
+      } catch(e) { console.error(e); }
+      setCarregando(false);
+    }
+    carregar();
+  }, []);
+
+  // ── Salva dados no Firebase ──
+  async function salvarFirebase(novosClientes) {
+    try {
+      await setDoc(doc(db, "cobranca-viviane", "dados"), {
+        clientes: novosClientes.map(c => ({ id:c.id, saldo:c.saldo, ocorrencias:c.ocorrencias, pagamentos:c.pagamentos })),
+        atualizado: new Date().toISOString()
+      });
+    } catch(e) { console.error(e); }
+  }
+
+  function atualizarClientes(fn) {
+    setClientes(prev => {
+      const novo = fn(prev);
+      salvarFirebase(novo);
+      return novo;
+    });
+  }
 
   const clienteSel = clientes.find(c => c.id === selectedId);
   const cidades    = ["Todas", ...new Set(CLIENTES_RAW.map(c => c.cidade))];
@@ -181,10 +232,23 @@ export default function App() {
   const safeBottom = "env(safe-area-inset-bottom, 0px)";
   const navH       = isMobile ? 60 : 0;
 
+  if (carregando)
+    return <div style={{ background:C.bg, minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", color:C.gold, fontSize:18, fontWeight:700, fontFamily:"'Segoe UI',sans-serif" }}>⏳ Carregando...</div>;
+
   if (view === "recibo" && reciboData)
     return <Recibo data={reciboData} onVoltar={() => setView("cliente")} isMobile={isMobile} />;
   if (view === "cliente" && clienteSel)
-    return <ClienteDetalhe cliente={clienteSel} onVoltar={() => { setView("lista"); setSelectedId(null); }} onModal={abrirModal} isMobile={isMobile} navH={navH} />;
+    return <ClienteDetalhe cliente={clienteSel} onVoltar={() => { setView("lista"); setSelectedId(null); }} isMobile={isMobile} navH={navH}
+      onSalvarPagamento={(rec, abat) => {
+        const saldoAntes = clienteSel.saldo;
+        atualizarClientes(prev => prev.map(c => c.id !== selectedId ? c : { ...c, saldo:Math.max(0, c.saldo - abat), pagamentos:[...c.pagamentos, rec] }));
+        setReciboData({ ...rec, cliente:clienteSel, saldoAntes, saldoDepois:Math.max(0, saldoAntes - abat) });
+        setView("recibo");
+      }}
+      onSalvarOcorrencia={(oc) => {
+        atualizarClientes(prev => prev.map(c => c.id !== selectedId ? c : { ...c, ocorrencias:[oc, ...c.ocorrencias] }));
+      }}
+    />;
 
   return (
     <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif", background:C.bg, minHeight:"100vh", minHeight:"100dvh", color:C.textHigh, paddingBottom:`calc(${navH}px + ${safeBottom})` }}>
@@ -345,83 +409,42 @@ export default function App() {
         </div>
       )}
 
-      {/* ── MODAL ── */}
-      {modalOpen && clienteSel && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", display:"flex", alignItems:isMobile?"flex-end":"center", justifyContent:"center", zIndex:999, padding:isMobile?0:16 }}>
-          <div style={{ background:C.modal, border:`1px solid ${C.borderMed}`, borderRadius:isMobile?"18px 18px 0 0":"14px", width:"100%", maxWidth:480, overflow:"hidden", boxShadow:"0 24px 60px rgba(0,0,0,.6)", maxHeight:isMobile?"90dvh":"90vh", display:"flex", flexDirection:"column" }}>
-            {/* Handle drag visual (mobile) */}
-            {isMobile && <div style={{ width:36, height:4, background:C.borderMed, borderRadius:2, margin:"10px auto 0" }} />}
-            <div style={{ background:C.header, borderBottom:`1px solid ${C.border}`, padding:"14px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
-              <div>
-                <div style={{ color:C.textWhite, fontWeight:800, fontSize:14 }}>Registrar Ação</div>
-                <div style={{ color:C.textMed, fontSize:11 }}>{clienteSel.nome.split(" ").slice(0,3).join(" ")} · <span style={{ color:C.red, fontWeight:700 }}>{fmt(clienteSel.saldo)}</span></div>
-              </div>
-              <button onClick={() => setModalOpen(false)} style={{ background:C.card, border:`1px solid ${C.border}`, color:C.textMed, borderRadius:8, width:36, height:36, fontSize:18, cursor:"pointer" }}>✕</button>
-            </div>
-            <div style={{ display:"flex", borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
-              {[["pagamento","💰 Pagto"],["negociacao","🤝 Parcela"],["ocorrencia","📝 Ocorr."]].map(([t, l]) => (
-                <button key={t} onClick={() => setModalTab(t)} style={{ flex:1, padding:"11px 2px", background:"none", border:"none", borderBottom:modalTab===t?`3px solid ${C.gold}`:"3px solid transparent", color:modalTab===t?C.gold:C.textMed, fontWeight:700, fontSize:11, cursor:"pointer" }}>{l}</button>
-              ))}
-            </div>
-            <div style={{ padding:"16px 18px", overflowY:"auto", paddingBottom:`calc(16px + ${safeBottom})` }}>
-              <label style={lbl}>Data</label>
-              <input type="date" value={form.data || hoje()} onChange={e => setForm(p => ({ ...p, data:e.target.value }))} style={iSt} />
-
-              {modalTab === "pagamento" && <>
-                <label style={lbl}>Valor Recebido (R$)</label>
-                <input placeholder="0,00" inputMode="decimal" value={form.valorRecebido||""} onChange={e => setForm(p => ({ ...p, valorRecebido:e.target.value }))} style={iSt} />
-                <label style={lbl}>Desconto / Abatimento (R$)</label>
-                <input placeholder="0,00" inputMode="decimal" value={form.desconto||""} onChange={e => setForm(p => ({ ...p, desconto:e.target.value }))} style={iSt} />
-                <label style={lbl}>Observação</label>
-                <textarea value={form.obs||""} onChange={e => setForm(p => ({ ...p, obs:e.target.value }))} style={{ ...iSt, height:70, resize:"none" }} />
-                <button onClick={salvarPagamento} style={{ ...bPrimary, minHeight:50 }}>💾 Salvar e Gerar Recibo</button>
-              </>}
-
-              {modalTab === "negociacao" && <>
-                <label style={lbl}>Entrada (opcional)</label>
-                <input placeholder="0,00" inputMode="decimal" value={form.valorRecebido||""} onChange={e => setForm(p => ({ ...p, valorRecebido:e.target.value }))} style={iSt} />
-                <label style={lbl}>Número de Parcelas</label>
-                <select value={form.parcelas||2} onChange={e => setForm(p => ({ ...p, parcelas:parseInt(e.target.value) }))} style={iSt}>
-                  {[1,2,3,4,5,6,8,10,12].map(n => <option key={n} value={n}>{n}x</option>)}
-                </select>
-                <div style={{ background:C.goldBg, border:`1px solid ${C.gold}44`, borderRadius:8, padding:14, marginBottom:14 }}>
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-                    <div>
-                      <div style={{ fontSize:10, color:C.textLow, fontWeight:600, marginBottom:3 }}>SALDO ATUAL</div>
-                      <div style={{ fontSize:16, fontWeight:900, color:C.red }}>{fmt(clienteSel.saldo)}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize:10, color:C.textLow, fontWeight:600, marginBottom:3 }}>PARCELA ESTIMADA</div>
-                      <div style={{ fontSize:16, fontWeight:900, color:C.gold }}>{fmt(parcEstimada())}</div>
-                    </div>
-                  </div>
-                </div>
-                <label style={lbl}>Condições acordadas</label>
-                <textarea value={form.obs||""} onChange={e => setForm(p => ({ ...p, obs:e.target.value }))} placeholder="Ex: paga R$300 todo dia 5…" style={{ ...iSt, height:60, resize:"none" }} />
-                <button onClick={salvarPagamento} style={{ ...bPrimary, minHeight:50 }}>✅ Confirmar Negociação</button>
-              </>}
-
-              {modalTab === "ocorrencia" && <>
-                <label style={lbl}>Tipo de Ocorrência</label>
-                <select value={form.tipoOcorrencia||TIPOS_OC[0]} onChange={e => setForm(p => ({ ...p, tipoOcorrencia:e.target.value }))} style={iSt}>
-                  {TIPOS_OC.map(t => <option key={t}>{t}</option>)}
-                </select>
-                <label style={lbl}>Descrição</label>
-                <textarea value={form.ocorrencia||""} onChange={e => setForm(p => ({ ...p, ocorrencia:e.target.value }))} placeholder="Descreva o que aconteceu…" style={{ ...iSt, height:100, resize:"none" }} />
-                <button onClick={salvarOcorrencia} style={{ ...bPrimary, minHeight:50 }}>📝 Registrar Ocorrência</button>
-              </>}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
 // ─── DETALHE DO CLIENTE ──────────────────────────────────────────────────────
-function ClienteDetalhe({ cliente, onVoltar, onModal, isMobile, navH }) {
+function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, onSalvarOcorrencia }) {
   const st = statusInfo(cliente);
   const safeBottom = "env(safe-area-inset-bottom, 0px)";
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState("pagamento");
+  const [form, setForm] = useState({});
+
+  function abrirModal(tab) {
+    setModalTab(tab);
+    setForm({ data:hoje(), valorRecebido:"", desconto:"", parcelas:2, obs:"", ocorrencia:"", tipoOcorrencia:TIPOS_OC[0] });
+    setModalOpen(true);
+  }
+  const fp = s => parseFloat((s||"").replace(",",".")) || 0;
+  function parcEstimada() {
+    return Math.max(0, cliente.saldo - fp(form.valorRecebido)) / (form.parcelas||1);
+  }
+  function salvarPagamento() {
+    const val = fp(form.valorRecebido), desc = fp(form.desconto);
+    if (val <= 0 && desc <= 0) { alert("Informe valor recebido ou desconto."); return; }
+    const abat = val + desc;
+    const rec = { id:Date.now(), data:form.data, valor:val, desconto:desc, abatimento:abat, obs:form.obs };
+    onSalvarPagamento(rec, abat);
+    setModalOpen(false);
+  }
+  function salvarOcorrencia() {
+    if (!form.ocorrencia?.trim()) { alert("Descreva a ocorrência."); return; }
+    const oc = { id:Date.now(), data:form.data, tipo:form.tipoOcorrencia, texto:form.ocorrencia };
+    onSalvarOcorrencia(oc);
+    setModalOpen(false);
+  }
+
   return (
     <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif", background:C.bg, minHeight:"100dvh", color:C.textHigh, paddingBottom:`calc(${navH}px + ${safeBottom})` }}>
       <div style={{ background:C.header, borderBottom:`1px solid ${C.border}`, padding:isMobile?`calc(env(safe-area-inset-top,0px) + 10px) 14px 10px`:"0 22px", height:isMobile?"auto":56, display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:100 }}>
@@ -442,9 +465,9 @@ function ClienteDetalhe({ cliente, onVoltar, onModal, isMobile, navH }) {
           <div style={{ fontSize:12, color:C.textMed, marginBottom:16 }}>📞 {cliente.fone}</div>
           {/* Botões de ação */}
           <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr", gap:8 }}>
-            <button onClick={() => onModal("pagamento")} style={{ ...bPrimary, minHeight:48, marginBottom:0 }}>💰 Registrar Pagamento</button>
-            <button onClick={() => onModal("negociacao")} style={{ ...bPrimary, background:C.goldDark, minHeight:48, marginBottom:0 }}>🤝 Negociar Parcelamento</button>
-            <button onClick={() => onModal("ocorrencia")} style={{ ...bOutline, minHeight:48, display:"block", width:"100%", textAlign:"center" }}>📝 Registrar Ocorrência</button>
+            <button onClick={() => abrirModal("pagamento")} style={{ ...bPrimary, minHeight:48, marginBottom:0 }}>💰 Registrar Pagamento</button>
+            <button onClick={() => abrirModal("negociacao")} style={{ ...bPrimary, background:C.goldDark, minHeight:48, marginBottom:0 }}>🤝 Negociar Parcelamento</button>
+            <button onClick={() => abrirModal("ocorrencia")} style={{ ...bOutline, minHeight:48, display:"block", width:"100%", textAlign:"center" }}>📝 Registrar Ocorrência</button>
           </div>
         </div>
 
@@ -497,6 +520,66 @@ function ClienteDetalhe({ cliente, onVoltar, onModal, isMobile, navH }) {
           ))}
         </div>
       </div>
+
+      {/* ── MODAL ── */}
+      {modalOpen && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", display:"flex", alignItems:isMobile?"flex-end":"center", justifyContent:"center", zIndex:999, padding:isMobile?0:16 }}>
+          <div style={{ background:C.modal, border:`1px solid ${C.borderMed}`, borderRadius:isMobile?"18px 18px 0 0":"14px", width:"100%", maxWidth:480, overflow:"hidden", boxShadow:"0 24px 60px rgba(0,0,0,.6)", maxHeight:isMobile?"90dvh":"90vh", display:"flex", flexDirection:"column" }}>
+            {isMobile && <div style={{ width:36, height:4, background:C.borderMed, borderRadius:2, margin:"10px auto 0" }} />}
+            <div style={{ background:C.header, borderBottom:`1px solid ${C.border}`, padding:"14px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+              <div>
+                <div style={{ color:C.textWhite, fontWeight:800, fontSize:14 }}>Registrar Ação</div>
+                <div style={{ color:C.textMed, fontSize:11 }}>{cliente.nome.split(" ").slice(0,3).join(" ")} · <span style={{ color:C.red, fontWeight:700 }}>{fmt(cliente.saldo)}</span></div>
+              </div>
+              <button onClick={() => setModalOpen(false)} style={{ background:C.card, border:`1px solid ${C.border}`, color:C.textMed, borderRadius:8, width:36, height:36, fontSize:18, cursor:"pointer" }}>✕</button>
+            </div>
+            <div style={{ display:"flex", borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
+              {[["pagamento","💰 Pagto"],["negociacao","🤝 Parcela"],["ocorrencia","📝 Ocorr."]].map(([t, l]) => (
+                <button key={t} onClick={() => setModalTab(t)} style={{ flex:1, padding:"11px 2px", background:"none", border:"none", borderBottom:modalTab===t?`3px solid ${C.gold}`:"3px solid transparent", color:modalTab===t?C.gold:C.textMed, fontWeight:700, fontSize:11, cursor:"pointer" }}>{l}</button>
+              ))}
+            </div>
+            <div style={{ padding:"16px 18px", overflowY:"auto", paddingBottom:`calc(16px + ${safeBottom})` }}>
+              <label style={lbl}>Data</label>
+              <input type="date" value={form.data || hoje()} onChange={e => setForm(p => ({ ...p, data:e.target.value }))} style={iSt} />
+              {modalTab === "pagamento" && <>
+                <label style={lbl}>Valor Recebido (R$)</label>
+                <input placeholder="0,00" inputMode="decimal" value={form.valorRecebido||""} onChange={e => setForm(p => ({ ...p, valorRecebido:e.target.value }))} style={iSt} />
+                <label style={lbl}>Desconto / Abatimento (R$)</label>
+                <input placeholder="0,00" inputMode="decimal" value={form.desconto||""} onChange={e => setForm(p => ({ ...p, desconto:e.target.value }))} style={iSt} />
+                <label style={lbl}>Observação</label>
+                <textarea value={form.obs||""} onChange={e => setForm(p => ({ ...p, obs:e.target.value }))} style={{ ...iSt, height:70, resize:"none" }} />
+                <button onClick={salvarPagamento} style={{ ...bPrimary, minHeight:50 }}>💾 Salvar e Gerar Recibo</button>
+              </>}
+              {modalTab === "negociacao" && <>
+                <label style={lbl}>Entrada (opcional)</label>
+                <input placeholder="0,00" inputMode="decimal" value={form.valorRecebido||""} onChange={e => setForm(p => ({ ...p, valorRecebido:e.target.value }))} style={iSt} />
+                <label style={lbl}>Número de Parcelas</label>
+                <select value={form.parcelas||2} onChange={e => setForm(p => ({ ...p, parcelas:parseInt(e.target.value) }))} style={iSt}>
+                  {[1,2,3,4,5,6,8,10,12].map(n => <option key={n} value={n}>{n}x</option>)}
+                </select>
+                <div style={{ background:C.goldBg, border:`1px solid ${C.gold}44`, borderRadius:8, padding:14, marginBottom:14 }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                    <div><div style={{ fontSize:10, color:C.textLow, fontWeight:600, marginBottom:3 }}>SALDO ATUAL</div><div style={{ fontSize:16, fontWeight:900, color:C.red }}>{fmt(cliente.saldo)}</div></div>
+                    <div><div style={{ fontSize:10, color:C.textLow, fontWeight:600, marginBottom:3 }}>PARCELA ESTIMADA</div><div style={{ fontSize:16, fontWeight:900, color:C.gold }}>{fmt(parcEstimada())}</div></div>
+                  </div>
+                </div>
+                <label style={lbl}>Condições acordadas</label>
+                <textarea value={form.obs||""} onChange={e => setForm(p => ({ ...p, obs:e.target.value }))} placeholder="Ex: paga R$300 todo dia 5…" style={{ ...iSt, height:60, resize:"none" }} />
+                <button onClick={salvarPagamento} style={{ ...bPrimary, minHeight:50 }}>✅ Confirmar Negociação</button>
+              </>}
+              {modalTab === "ocorrencia" && <>
+                <label style={lbl}>Tipo de Ocorrência</label>
+                <select value={form.tipoOcorrencia||TIPOS_OC[0]} onChange={e => setForm(p => ({ ...p, tipoOcorrencia:e.target.value }))} style={iSt}>
+                  {TIPOS_OC.map(t => <option key={t}>{t}</option>)}
+                </select>
+                <label style={lbl}>Descrição</label>
+                <textarea value={form.ocorrencia||""} onChange={e => setForm(p => ({ ...p, ocorrencia:e.target.value }))} placeholder="Descreva o que aconteceu…" style={{ ...iSt, height:100, resize:"none" }} />
+                <button onClick={salvarOcorrencia} style={{ ...bPrimary, minHeight:50 }}>📝 Registrar Ocorrência</button>
+              </>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
