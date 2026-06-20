@@ -4,12 +4,12 @@ import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
 // ─── FIREBASE ────────────────────────────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyBBfsgtc7ipRkxKc8KyFaLg0sktP7l78WI",
-  authDomain: "spazzio-professional.firebaseapp.com",
-  projectId: "spazzio-professional",
-  storageBucket: "spazzio-professional.firebasestorage.app",
-  messagingSenderId: "1011918585363",
-  appId: "1:1011918585363:web:165ea97e83ab1ab94049e6"
+  apiKey: "AIzaSyBSDQoOhkmapE-T4_NfPFWjvRgLP6Uv74g",
+  authDomain: "gestao-cobranca-c8191.firebaseapp.com",
+  projectId: "gestao-cobranca-c8191",
+  storageBucket: "gestao-cobranca-c8191.firebasestorage.app",
+  messagingSenderId: "492957379862",
+  appId: "1:492957379862:web:39d62facf7cb5acacaf437"
 };
 const fbApp = initializeApp(firebaseConfig);
 const db    = getFirestore(fbApp);
