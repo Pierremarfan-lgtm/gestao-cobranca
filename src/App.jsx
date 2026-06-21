@@ -252,6 +252,11 @@ export default function App() {
     return <Recibo data={reciboData} onVoltar={() => setView("cliente")} isMobile={isMobile} />;
   if (view === "cliente" && clienteSel)
     return <ClienteDetalhe cliente={clienteSel} onVoltar={() => { setView("lista"); setSelectedId(null); }} isMobile={isMobile} navH={navH}
+      onDeletar={() => {
+        atualizarClientes(prev => prev.filter(c => c.id !== selectedId));
+        setSelectedId(null);
+        setView("lista");
+      }}
       onSalvarPagamento={(rec, abat) => {
         const saldoAntes = clienteSel.saldo;
         atualizarClientes(prev => prev.map(c => c.id !== selectedId ? c : { ...c, saldo:Math.max(0, c.saldo - abat), pagamentos:[...c.pagamentos, rec] }));
@@ -436,7 +441,7 @@ export default function App() {
 }
 
 // ─── DETALHE DO CLIENTE ──────────────────────────────────────────────────────
-function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, onSalvarOcorrencia }) {
+function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, onSalvarOcorrencia, onDeletar }) {
   const st = statusInfo(cliente);
   const safeBottom = "env(safe-area-inset-bottom, 0px)";
   const [modalOpen, setModalOpen] = useState(false);
@@ -478,6 +483,7 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
           <div style={{ fontSize:11, color:C.textLow }}>{cliente.bairro} · {cliente.cidade}</div>
         </div>
         <Badge label={st.label} cor={st.cor} bg={st.bg} />
+        <button onClick={() => { if(window.confirm(`Deletar "${cliente.nome}" e todos os seus dados?\n\nEsta ação não pode ser desfeita!`)) { onDeletar(); } }} style={{ background:"none", border:`1px solid ${C.red}`, color:C.red, borderRadius:8, padding:"6px 10px", fontSize:13, cursor:"pointer", flexShrink:0 }}>🗑️</button>
       </div>
 
       <div style={{ maxWidth:720, margin:"0 auto", padding:isMobile?"14px 12px":"22px" }}>
