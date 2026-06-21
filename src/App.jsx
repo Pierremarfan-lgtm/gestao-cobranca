@@ -138,8 +138,10 @@ function Badge({ label, cor, bg }) {
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const isMobile = useIsMobile();
+  const [usuario, setUsuario]       = useState(null); // { nome, perfil: "gestor"|"vendedor" }
   const [clientes, setClientes]     = useState(() => CLIENTES_RAW.map(c => ({ ...c, ocorrencias:[], pagamentos:[] })));
   const [vendedores, setVendedores] = useState(["Viviane"]);
+  const [senhaGestor, setSenhaGestor] = useState("bio2024"); // senha padrão
   const [view, setView]             = useState("dashboard");
   const [selectedId, setSelectedId] = useState(null);
   const [reciboData, setReciboData] = useState(null);
@@ -151,6 +153,9 @@ export default function App() {
   const [form, setForm]             = useState({});
   const [carregando, setCarregando] = useState(true);
 
+  // Se não logado, mostra tela de login
+  if (!usuario) return <Login vendedores={vendedores} senhaGestor={senhaGestor} onLogin={setUsuario} isMobile={isMobile} />;
+
   // ── Carrega dados do Firebase ──
   useEffect(() => {
     async function carregar() {
@@ -159,6 +164,7 @@ export default function App() {
         if (snap.exists()) {
           const dados = snap.data().clientes;
           if (snap.data().vendedores) setVendedores(snap.data().vendedores);
+          if (snap.data().senhaGestor) setSenhaGestor(snap.data().senhaGestor);
           const fixos = CLIENTES_RAW.map(c => {
             const salvo = dados.find(s => s.id === c.id);
             return salvo ? { ...c, saldo:salvo.saldo, ocorrencias:salvo.ocorrencias||[], pagamentos:salvo.pagamentos||[], vendedor:salvo.vendedor||"Viviane" } : { ...c, ocorrencias:[], pagamentos:[], vendedor:"Viviane" };
@@ -173,11 +179,12 @@ export default function App() {
   }, []);
 
   // ── Salva dados no Firebase ──
-  async function salvarFirebase(novosClientes, novosVendedores) {
+  async function salvarFirebase(novosClientes, novosVendedores, novaSenha) {
     try {
       await setDoc(doc(db, "cobranca-viviane", "dados"), {
         clientes: novosClientes.map(c => ({ id:c.id, nome:c.nome, cidade:c.cidade, bairro:c.bairro, endereco:c.endereco, cep:c.cep, fone:c.fone, saldo:c.saldo, vendedor:c.vendedor||"Viviane", ocorrencias:c.ocorrencias, pagamentos:c.pagamentos })),
         vendedores: novosVendedores || vendedores,
+        senhaGestor: novaSenha || senhaGestor,
         atualizado: new Date().toISOString()
       });
     } catch(e) { console.error(e); }
@@ -207,18 +214,23 @@ export default function App() {
   const clienteSel = clientes.find(c => c.id === selectedId);
   const cidades    = ["Todas", ...new Set(clientes.map(c => c.cidade))];
 
-  const totalGeral    = clientes.reduce((s, c) => s + c.saldo + c.pagamentos.reduce((p, pg) => p + pg.abatimento, 0), 0);
-  const totalRecebido = clientes.reduce((s, c) => s + c.pagamentos.reduce((p, pg) => p + pg.valor, 0), 0);
-  const saldoAtual    = clientes.reduce((s, c) => s + c.saldo, 0);
-  const contatados    = clientes.filter(c => c.ocorrencias.length > 0).length;
+  // Vendedor só vê seus próprios clientes
+  const clientesVisiveis = usuario.perfil === "vendedor"
+    ? clientes.filter(c => c.vendedor === usuario.nome)
+    : clientes;
+
+  const totalGeral    = clientesVisiveis.reduce((s, c) => s + c.saldo + c.pagamentos.reduce((p, pg) => p + pg.abatimento, 0), 0);
+  const totalRecebido = clientesVisiveis.reduce((s, c) => s + c.pagamentos.reduce((p, pg) => p + pg.valor, 0), 0);
+  const saldoAtual    = clientesVisiveis.reduce((s, c) => s + c.saldo, 0);
+  const contatados    = clientesVisiveis.filter(c => c.ocorrencias.length > 0).length;
   const perc          = totalGeral > 0 ? (totalRecebido / totalGeral * 100).toFixed(1) : 0;
 
-  const filtrados = useMemo(() => clientes.filter(c => {
+  const filtrados = useMemo(() => clientesVisiveis.filter(c => {
     const t  = c.nome.toLowerCase().includes(filtro.toLowerCase()) || c.bairro.toLowerCase().includes(filtro.toLowerCase());
     const ci = filtroCidade === "Todas" || c.cidade === filtroCidade;
     const v  = filtroVendedor === "Todos" || c.vendedor === filtroVendedor;
     return t && ci && v;
-  }), [clientes, filtro, filtroCidade, filtroVendedor]);
+  }), [clientesVisiveis, filtro, filtroCidade, filtroVendedor]);
 
   function abrirModal(tab) {
     setModalTab(tab);
@@ -295,12 +307,13 @@ export default function App() {
             <div style={{ fontSize:17, fontWeight:800, color:C.textWhite }}>Sistema de Cobrança</div>
           </div>
           <div style={{ flex:1 }} />
-          <span style={{ fontSize:12, color:C.textMed }}>Viviane · {new Date().toLocaleDateString("pt-BR")}</span>
+          <span style={{ fontSize:12, color:C.textMed }}>👤 {usuario.nome} · {usuario.perfil === "gestor" ? "Gestor" : "Vendedor"}</span>
           {["dashboard","lista"].map(v => (
             <button key={v} onClick={() => setView(v)} style={{ background:view===v?C.gold:"transparent", color:view===v?"#000":C.gold, border:`1px solid ${C.gold}`, borderRadius:7, padding:"8px 18px", fontSize:13, fontWeight:700, cursor:"pointer", minHeight:44 }}>
               {v === "dashboard" ? "📊 Resumo" : "📋 Clientes"}
             </button>
           ))}
+          <button onClick={() => setUsuario(null)} style={{ background:"none", border:`1px solid ${C.border}`, color:C.textLow, borderRadius:7, padding:"8px 14px", fontSize:12, cursor:"pointer" }}>Sair</button>
         </div>
       ) : (
         <div style={{ background:C.header, borderBottom:`1px solid ${C.border}`, padding:`calc(env(safe-area-inset-top,0px) + 10px) 16px 10px`, display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100 }}>
@@ -308,7 +321,10 @@ export default function App() {
             <div style={{ fontSize:9, color:C.gold, letterSpacing:2, textTransform:"uppercase", fontWeight:700 }}>Bio Ozônio</div>
             <div style={{ fontSize:15, fontWeight:800, color:C.textWhite }}>Sistema de Cobrança</div>
           </div>
-          <div style={{ fontSize:11, color:C.textLow }}>Viviane · {new Date().toLocaleDateString("pt-BR")}</div>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ fontSize:11, color:C.gold }}>👤 {usuario.nome}</div>
+            <button onClick={() => setUsuario(null)} style={{ background:"none", border:`1px solid ${C.border}`, color:C.textLow, borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>Sair</button>
+          </div>
         </div>
       )}
 
@@ -770,6 +786,66 @@ function CadastroCliente({ onVoltar, onSalvar, isMobile, vendedores, onAdicionar
         </div>
         <button onClick={salvar} style={{ ...bPrimary, minHeight:54, fontSize:16 }}>💾 Cadastrar Cliente</button>
         <button onClick={onVoltar} style={{ ...bOutline, width:"100%", textAlign:"center", display:"block", marginTop:8, minHeight:44 }}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── LOGIN ───────────────────────────────────────────────────────────────────
+function Login({ vendedores, senhaGestor, onLogin, isMobile }) {
+  const [tipo, setTipo]   = useState("vendedor"); // "gestor" | "vendedor"
+  const [nome, setNome]   = useState("");
+  const [senha, setSenha] = useState("");
+  const [erro, setErro]   = useState("");
+
+  function entrar() {
+    setErro("");
+    if (tipo === "gestor") {
+      if (senha === senhaGestor) {
+        onLogin({ nome:"Gestor", perfil:"gestor" });
+      } else {
+        setErro("Senha incorreta.");
+      }
+    } else {
+      if (!nome) { setErro("Selecione seu nome."); return; }
+      onLogin({ nome, perfil:"vendedor" });
+    }
+  }
+
+  return (
+    <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif", background:C.bg, minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div style={{ width:"100%", maxWidth:380 }}>
+        <div style={{ textAlign:"center", marginBottom:32 }}>
+          <div style={{ fontSize:11, color:C.gold, letterSpacing:4, textTransform:"uppercase", fontWeight:700, marginBottom:6 }}>Bio Ozônio</div>
+          <div style={{ fontSize:26, fontWeight:900, color:C.textWhite }}>Sistema de Cobrança</div>
+          <div style={{ fontSize:13, color:C.textLow, marginTop:4 }}>Acesse sua conta</div>
+        </div>
+        <div style={{ background:C.card, borderRadius:16, padding:28, border:`1px solid ${C.border}` }}>
+          <div style={{ display:"flex", gap:8, marginBottom:22 }}>
+            {[["vendedor","👤 Vendedor"],["gestor","🔐 Gestor"]].map(([t, l]) => (
+              <button key={t} onClick={() => { setTipo(t); setErro(""); }} style={{ flex:1, padding:"10px", borderRadius:8, border:`2px solid ${tipo===t?C.gold:C.border}`, background:tipo===t?C.goldBg:"transparent", color:tipo===t?C.gold:C.textLow, fontWeight:700, fontSize:13, cursor:"pointer" }}>{l}</button>
+            ))}
+          </div>
+
+          {tipo === "vendedor" ? (
+            <>
+              <label style={lbl}>Seu nome</label>
+              <select value={nome} onChange={e => setNome(e.target.value)} style={iSt}>
+                <option value="">Selecione...</option>
+                {vendedores.map(v => <option key={v}>{v}</option>)}
+              </select>
+            </>
+          ) : (
+            <>
+              <label style={lbl}>Senha do gestor</label>
+              <input type="password" value={senha} onChange={e => setSenha(e.target.value)} onKeyDown={e => e.key==="Enter" && entrar()} placeholder="••••••••" style={iSt} />
+            </>
+          )}
+
+          {erro && <div style={{ color:C.red, fontSize:13, marginBottom:12, textAlign:"center" }}>{erro}</div>}
+          <button onClick={entrar} style={{ ...bPrimary, minHeight:52, fontSize:16, marginBottom:0 }}>Entrar →</button>
+        </div>
+        <div style={{ textAlign:"center", marginTop:16, fontSize:11, color:C.textMuted }}>Senha padrão do gestor: bio2024</div>
       </div>
     </div>
   );
