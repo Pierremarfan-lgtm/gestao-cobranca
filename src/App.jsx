@@ -732,10 +732,12 @@ function CadastroCliente({ onVoltar, onSalvar, isMobile, vendedores, onAdicionar
         <div style={{ background:C.card, borderRadius:12, padding:"20px", border:`1px solid ${C.border}`, marginBottom:16 }}>
           <div style={{ fontWeight:800, color:C.gold, marginBottom:16, fontSize:13 }}>👤 Vendedor Responsável</div>
           {adicionandoVendedor ? (
-            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
-              <input value={novoVendedor} onChange={e => setNovoVendedor(e.target.value)} placeholder="Nome do vendedor" style={{ ...iSt, flex:1, marginBottom:0 }} />
-              <button onClick={salvarNovoVendedor} style={{ ...bPrimary, marginBottom:0, whiteSpace:"nowrap", padding:"0 16px" }}>✓</button>
-              <button onClick={() => setAdicionandoVendedor(false)} style={{ background:C.card, border:`1px solid ${C.border}`, color:C.textMed, borderRadius:8, padding:"0 12px", cursor:"pointer" }}>✕</button>
+            <div style={{ marginBottom:12 }}>
+              <input value={novoVendedor} onChange={e => setNovoVendedor(e.target.value)} placeholder="Nome do novo vendedor" style={{ ...iSt, marginBottom:8 }} />
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={salvarNovoVendedor} style={{ ...bPrimary, flex:1, marginBottom:0, minHeight:44 }}>✓ Confirmar</button>
+                <button onClick={() => setAdicionandoVendedor(false)} style={{ background:C.card, border:`1px solid ${C.border}`, color:C.textMed, borderRadius:8, padding:"0 16px", cursor:"pointer", fontWeight:700 }}>✕ Cancelar</button>
+              </div>
             </div>
           ) : (
             <div style={{ display:"flex", gap:8, marginBottom:12 }}>
