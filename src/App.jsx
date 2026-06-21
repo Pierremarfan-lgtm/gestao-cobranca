@@ -139,11 +139,13 @@ function Badge({ label, cor, bg }) {
 export default function App() {
   const isMobile = useIsMobile();
   const [clientes, setClientes]     = useState(() => CLIENTES_RAW.map(c => ({ ...c, ocorrencias:[], pagamentos:[] })));
+  const [vendedores, setVendedores] = useState(["Viviane"]);
   const [view, setView]             = useState("dashboard");
   const [selectedId, setSelectedId] = useState(null);
   const [reciboData, setReciboData] = useState(null);
   const [filtro, setFiltro]         = useState("");
   const [filtroCidade, setFiltroCidade] = useState("Todas");
+  const [filtroVendedor, setFiltroVendedor] = useState("Todos");
   const [modalOpen, setModalOpen]   = useState(false);
   const [modalTab, setModalTab]     = useState("pagamento");
   const [form, setForm]             = useState({});
@@ -156,10 +158,10 @@ export default function App() {
         const snap = await getDoc(doc(db, "cobranca-viviane", "dados"));
         if (snap.exists()) {
           const dados = snap.data().clientes;
-          // Mescla clientes fixos com dados salvos + clientes novos do Firebase
+          if (snap.data().vendedores) setVendedores(snap.data().vendedores);
           const fixos = CLIENTES_RAW.map(c => {
             const salvo = dados.find(s => s.id === c.id);
-            return salvo ? { ...c, saldo:salvo.saldo, ocorrencias:salvo.ocorrencias||[], pagamentos:salvo.pagamentos||[] } : { ...c, ocorrencias:[], pagamentos:[] };
+            return salvo ? { ...c, saldo:salvo.saldo, ocorrencias:salvo.ocorrencias||[], pagamentos:salvo.pagamentos||[], vendedor:salvo.vendedor||"Viviane" } : { ...c, ocorrencias:[], pagamentos:[], vendedor:"Viviane" };
           });
           const novos = dados.filter(s => !CLIENTES_RAW.find(c => c.id === s.id));
           setClientes([...fixos, ...novos]);
@@ -171,10 +173,11 @@ export default function App() {
   }, []);
 
   // ── Salva dados no Firebase ──
-  async function salvarFirebase(novosClientes) {
+  async function salvarFirebase(novosClientes, novosVendedores) {
     try {
       await setDoc(doc(db, "cobranca-viviane", "dados"), {
-        clientes: novosClientes.map(c => ({ id:c.id, nome:c.nome, cidade:c.cidade, bairro:c.bairro, endereco:c.endereco, cep:c.cep, fone:c.fone, saldo:c.saldo, ocorrencias:c.ocorrencias, pagamentos:c.pagamentos })),
+        clientes: novosClientes.map(c => ({ id:c.id, nome:c.nome, cidade:c.cidade, bairro:c.bairro, endereco:c.endereco, cep:c.cep, fone:c.fone, saldo:c.saldo, vendedor:c.vendedor||"Viviane", ocorrencias:c.ocorrencias, pagamentos:c.pagamentos })),
+        vendedores: novosVendedores || vendedores,
         atualizado: new Date().toISOString()
       });
     } catch(e) { console.error(e); }
@@ -183,14 +186,20 @@ export default function App() {
   function atualizarClientes(fn) {
     setClientes(prev => {
       const novo = fn(prev);
-      salvarFirebase(novo);
+      salvarFirebase(novo, vendedores);
       return novo;
     });
   }
 
+  function adicionarVendedor(nome) {
+    const novos = [...vendedores, nome];
+    setVendedores(novos);
+    salvarFirebase(clientes, novos);
+  }
+
   function adicionarCliente(dados) {
     const novoId = Date.now();
-    const novo = { id:novoId, nome:dados.nome, cidade:dados.cidade, bairro:dados.bairro, endereco:dados.endereco, cep:dados.cep, fone:dados.fone, saldo:parseFloat((dados.saldo||"0").replace(",","."))||0, ocorrencias:[], pagamentos:[] };
+    const novo = { id:novoId, nome:dados.nome, cidade:dados.cidade, bairro:dados.bairro, endereco:dados.endereco, cep:dados.cep, fone:dados.fone, saldo:parseFloat((dados.saldo||"0").replace(",","."))||0, vendedor:dados.vendedor||vendedores[0]||"Viviane", ocorrencias:[], pagamentos:[] };
     atualizarClientes(prev => [...prev, novo]);
     setView("lista");
   }
@@ -207,8 +216,9 @@ export default function App() {
   const filtrados = useMemo(() => clientes.filter(c => {
     const t  = c.nome.toLowerCase().includes(filtro.toLowerCase()) || c.bairro.toLowerCase().includes(filtro.toLowerCase());
     const ci = filtroCidade === "Todas" || c.cidade === filtroCidade;
-    return t && ci;
-  }), [clientes, filtro, filtroCidade]);
+    const v  = filtroVendedor === "Todos" || c.vendedor === filtroVendedor;
+    return t && ci && v;
+  }), [clientes, filtro, filtroCidade, filtroVendedor]);
 
   function abrirModal(tab) {
     setModalTab(tab);
@@ -246,7 +256,7 @@ export default function App() {
     return <div style={{ background:C.bg, minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", color:C.gold, fontSize:18, fontWeight:700, fontFamily:"'Segoe UI',sans-serif" }}>⏳ Carregando...</div>;
 
   if (view === "cadastro")
-    return <CadastroCliente onVoltar={() => setView("lista")} onSalvar={adicionarCliente} isMobile={isMobile} />;
+    return <CadastroCliente onVoltar={() => setView("lista")} onSalvar={adicionarCliente} isMobile={isMobile} vendedores={vendedores} onAdicionarVendedor={adicionarVendedor} />;
 
   if (view === "recibo" && reciboData)
     return <Recibo data={reciboData} onVoltar={() => setView("cliente")} isMobile={isMobile} />;
@@ -383,12 +393,18 @@ export default function App() {
 
         {/* LISTA */}
         {view === "lista" && <>
-          <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap" }}>
+          <div style={{ display:"flex", gap:10, marginBottom:10, flexWrap:"wrap" }}>
             <input value={filtro} onChange={e => setFiltro(e.target.value)}
               placeholder="🔍  Buscar nome ou bairro..."
-              style={{ flex:1, minWidth:160, ...iSt }} />
-            <select value={filtroCidade} onChange={e => setFiltroCidade(e.target.value)} style={{ ...iSt, minWidth:120 }}>
+              style={{ flex:1, minWidth:160, ...iSt, marginBottom:0 }} />
+          </div>
+          <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap" }}>
+            <select value={filtroCidade} onChange={e => setFiltroCidade(e.target.value)} style={{ ...iSt, flex:1, marginBottom:0 }}>
               {cidades.map(c => <option key={c}>{c}</option>)}
+            </select>
+            <select value={filtroVendedor} onChange={e => setFiltroVendedor(e.target.value)} style={{ ...iSt, flex:1, marginBottom:0 }}>
+              <option value="Todos">👤 Todos</option>
+              {vendedores.map(v => <option key={v}>{v}</option>)}
             </select>
           </div>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
@@ -409,6 +425,7 @@ export default function App() {
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontWeight:700, fontSize:13, color:C.textWhite, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.nome}</div>
                     <div style={{ fontSize:11, color:C.textLow }}>{c.bairro} · {c.cidade}</div>
+                    {c.vendedor && <div style={{ fontSize:10, color:C.gold, marginTop:1 }}>👤 {c.vendedor}</div>}
                     {c.ocorrencias.length > 0 && <div style={{ fontSize:10, color:C.textMed, marginTop:1 }}>📝 {c.ocorrencias[0].tipo}</div>}
                   </div>
                   <div style={{ textAlign:"right", flexShrink:0 }}>
@@ -684,15 +701,25 @@ const bPrimary= { background:C.gold, color:"#000", border:"none", borderRadius:8
 const bOutline= { background:"transparent", color:C.gold, border:`1.5px solid ${C.gold}`, borderRadius:8, padding:"11px 16px", fontSize:13, fontWeight:700, cursor:"pointer", display:"inline-block" };
 
 // ─── CADASTRO DE CLIENTE ─────────────────────────────────────────────────────
-function CadastroCliente({ onVoltar, onSalvar, isMobile }) {
+function CadastroCliente({ onVoltar, onSalvar, isMobile, vendedores, onAdicionarVendedor }) {
   const safeBottom = "env(safe-area-inset-bottom, 0px)";
-  const [f, setF] = useState({ nome:"", cidade:"", bairro:"", endereco:"", cep:"", fone:"", saldo:"" });
+  const [f, setF] = useState({ nome:"", cidade:"", bairro:"", endereco:"", cep:"", fone:"", saldo:"", vendedor:vendedores[0]||"" });
+  const [novoVendedor, setNovoVendedor] = useState("");
+  const [adicionandoVendedor, setAdicionandoVendedor] = useState(false);
   const upd = k => e => setF(p => ({ ...p, [k]:e.target.value }));
 
   function salvar() {
     if (!f.nome.trim()) { alert("Informe o nome do cliente."); return; }
     if (!f.saldo || parseFloat(f.saldo.replace(",",".")) <= 0) { alert("Informe o valor do débito."); return; }
     onSalvar(f);
+  }
+
+  function salvarNovoVendedor() {
+    if (!novoVendedor.trim()) return;
+    onAdicionarVendedor(novoVendedor.trim());
+    setF(p => ({ ...p, vendedor:novoVendedor.trim() }));
+    setNovoVendedor("");
+    setAdicionandoVendedor(false);
   }
 
   return (
@@ -702,6 +729,23 @@ function CadastroCliente({ onVoltar, onSalvar, isMobile }) {
         <div style={{ fontWeight:800, fontSize:16, color:C.textWhite }}>➕ Novo Cliente</div>
       </div>
       <div style={{ padding:isMobile?"16px":"24px", maxWidth:500, margin:"0 auto" }}>
+        <div style={{ background:C.card, borderRadius:12, padding:"20px", border:`1px solid ${C.border}`, marginBottom:16 }}>
+          <div style={{ fontWeight:800, color:C.gold, marginBottom:16, fontSize:13 }}>👤 Vendedor Responsável</div>
+          {adicionandoVendedor ? (
+            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+              <input value={novoVendedor} onChange={e => setNovoVendedor(e.target.value)} placeholder="Nome do vendedor" style={{ ...iSt, flex:1, marginBottom:0 }} />
+              <button onClick={salvarNovoVendedor} style={{ ...bPrimary, marginBottom:0, whiteSpace:"nowrap", padding:"0 16px" }}>✓</button>
+              <button onClick={() => setAdicionandoVendedor(false)} style={{ background:C.card, border:`1px solid ${C.border}`, color:C.textMed, borderRadius:8, padding:"0 12px", cursor:"pointer" }}>✕</button>
+            </div>
+          ) : (
+            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+              <select value={f.vendedor} onChange={upd("vendedor")} style={{ ...iSt, flex:1, marginBottom:0 }}>
+                {vendedores.map(v => <option key={v}>{v}</option>)}
+              </select>
+              <button onClick={() => setAdicionandoVendedor(true)} style={{ background:C.goldBg, border:`1px solid ${C.gold}`, color:C.gold, borderRadius:8, padding:"0 14px", cursor:"pointer", fontWeight:700, fontSize:13, whiteSpace:"nowrap" }}>+ Novo</button>
+            </div>
+          )}
+        </div>
         <div style={{ background:C.card, borderRadius:12, padding:"20px", border:`1px solid ${C.border}`, marginBottom:16 }}>
           <div style={{ fontWeight:800, color:C.gold, marginBottom:16, fontSize:13 }}>📋 Dados do Cliente</div>
           <label style={lbl}>Nome completo *</label>
