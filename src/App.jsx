@@ -761,6 +761,35 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
 
 // ─── RECIBO ──────────────────────────────────────────────────────────────────
 function Recibo({ data, onVoltar, isMobile }) {
+  function mensagemWhatsApp() {
+    const txt = `*Bio Ozônio — Recibo de Pagamento*\n\n` +
+      `Cliente: *${data.cliente.nome}*\n` +
+      `Data: ${data.data}\n` +
+      `Valor recebido: *${fmt(data.valor)}*\n` +
+      (data.desconto > 0 ? `Desconto: ${fmt(data.desconto)}\n` : "") +
+      `Total abatido: *${fmt(data.abatimento)}*\n` +
+      `Saldo anterior: ${fmt(data.saldoAntes)}\n` +
+      `*Novo saldo devedor: ${fmt(data.saldoDepois)}*\n` +
+      (data.obs ? `\nObs: ${data.obs}\n` : "") +
+      `\n_Emitido em ${new Date().toLocaleDateString("pt-BR")} — Bio Ozônio_`;
+    const fone = data.cliente.fone?.replace(/\D/g, "");
+    const url = fone
+      ? `https://wa.me/55${fone}?text=${encodeURIComponent(txt)}`
+      : `https://wa.me/?text=${encodeURIComponent(txt)}`;
+    window.open(url, "_blank");
+  }
+
+  async function compartilhar() {
+    const txt = `Bio Ozônio — Recibo\nCliente: ${data.cliente.nome}\nValor: ${fmt(data.valor)}\nNovo saldo: ${fmt(data.saldoDepois)}\nData: ${data.data}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title:"Recibo Bio Ozônio", text:txt });
+      } catch(e) {}
+    } else {
+      window.print();
+    }
+  }
+
   return (
     <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif", background:C.bg, minHeight:"100dvh", display:"flex", flexDirection:"column", alignItems:"center", padding:isMobile?"12px":"28px", paddingTop:isMobile?"calc(env(safe-area-inset-top,0px) + 12px)":"28px" }}>
       <div style={{ background:"#fff", borderRadius:14, width:"100%", maxWidth:500, overflow:"hidden", boxShadow:"0 12px 50px rgba(0,0,0,.4)" }}>
@@ -800,9 +829,10 @@ function Recibo({ data, onVoltar, isMobile }) {
           </div>
         </div>
       </div>
-      <div style={{ display:"flex", gap:10, marginTop:16, width:"100%", maxWidth:500 }}>
-        <button onClick={onVoltar} style={{ ...bOutline, flex:1, textAlign:"center", minHeight:48 }}>← Voltar</button>
-        <button onClick={() => window.print()} style={{ ...bPrimary, flex:1, marginBottom:0, minHeight:48 }}>🖨️ Imprimir</button>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:16, width:"100%", maxWidth:500 }}>
+        <button onClick={onVoltar} style={{ ...bOutline, textAlign:"center", minHeight:48 }}>← Voltar</button>
+        <button onClick={mensagemWhatsApp} style={{ background:"#25D366", color:"#fff", border:"none", borderRadius:8, padding:"12px 18px", fontSize:14, fontWeight:800, cursor:"pointer", textAlign:"center", minHeight:48 }}>💬 WhatsApp</button>
+        <button onClick={compartilhar} style={{ ...bPrimary, marginBottom:0, minHeight:48, gridColumn:"1/-1" }}>📤 Compartilhar Recibo</button>
       </div>
     </div>
   );
