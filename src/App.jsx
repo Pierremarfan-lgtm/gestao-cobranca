@@ -156,10 +156,13 @@ export default function App() {
         const snap = await getDoc(doc(db, "cobranca-viviane", "dados"));
         if (snap.exists()) {
           const dados = snap.data().clientes;
-          setClientes(CLIENTES_RAW.map(c => {
+          // Mescla clientes fixos com dados salvos + clientes novos do Firebase
+          const fixos = CLIENTES_RAW.map(c => {
             const salvo = dados.find(s => s.id === c.id);
             return salvo ? { ...c, saldo:salvo.saldo, ocorrencias:salvo.ocorrencias||[], pagamentos:salvo.pagamentos||[] } : { ...c, ocorrencias:[], pagamentos:[] };
-          }));
+          });
+          const novos = dados.filter(s => !CLIENTES_RAW.find(c => c.id === s.id));
+          setClientes([...fixos, ...novos]);
         }
       } catch(e) { console.error(e); }
       setCarregando(false);
@@ -171,7 +174,7 @@ export default function App() {
   async function salvarFirebase(novosClientes) {
     try {
       await setDoc(doc(db, "cobranca-viviane", "dados"), {
-        clientes: novosClientes.map(c => ({ id:c.id, saldo:c.saldo, ocorrencias:c.ocorrencias, pagamentos:c.pagamentos })),
+        clientes: novosClientes.map(c => ({ id:c.id, nome:c.nome, cidade:c.cidade, bairro:c.bairro, endereco:c.endereco, cep:c.cep, fone:c.fone, saldo:c.saldo, ocorrencias:c.ocorrencias, pagamentos:c.pagamentos })),
         atualizado: new Date().toISOString()
       });
     } catch(e) { console.error(e); }
@@ -183,6 +186,13 @@ export default function App() {
       salvarFirebase(novo);
       return novo;
     });
+  }
+
+  function adicionarCliente(dados) {
+    const novoId = Date.now();
+    const novo = { id:novoId, nome:dados.nome, cidade:dados.cidade, bairro:dados.bairro, endereco:dados.endereco, cep:dados.cep, fone:dados.fone, saldo:parseFloat((dados.saldo||"0").replace(",","."))||0, ocorrencias:[], pagamentos:[] };
+    atualizarClientes(prev => [...prev, novo]);
+    setView("lista");
   }
 
   const clienteSel = clientes.find(c => c.id === selectedId);
@@ -234,6 +244,9 @@ export default function App() {
 
   if (carregando)
     return <div style={{ background:C.bg, minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", color:C.gold, fontSize:18, fontWeight:700, fontFamily:"'Segoe UI',sans-serif" }}>⏳ Carregando...</div>;
+
+  if (view === "cadastro")
+    return <CadastroCliente onVoltar={() => setView("lista")} onSalvar={adicionarCliente} isMobile={isMobile} />;
 
   if (view === "recibo" && reciboData)
     return <Recibo data={reciboData} onVoltar={() => setView("cliente")} isMobile={isMobile} />;
@@ -373,8 +386,11 @@ export default function App() {
               {cidades.map(c => <option key={c}>{c}</option>)}
             </select>
           </div>
-          <div style={{ background:C.blueBg, border:`1px solid ${C.blue}44`, borderRadius:8, padding:"8px 14px", fontSize:12, fontWeight:700, color:C.blue, marginBottom:12 }}>
-            {filtrados.length} clientes · {fmt(filtrados.reduce((s, c) => s + c.saldo, 0))}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+            <div style={{ background:C.blueBg, border:`1px solid ${C.blue}44`, borderRadius:8, padding:"8px 14px", fontSize:12, fontWeight:700, color:C.blue }}>
+              {filtrados.length} clientes · {fmt(filtrados.reduce((s, c) => s + c.saldo, 0))}
+            </div>
+            <button onClick={() => setView("cadastro")} style={{ background:C.gold, color:"#000", border:"none", borderRadius:8, padding:"8px 16px", fontSize:13, fontWeight:800, cursor:"pointer" }}>➕ Novo Cliente</button>
           </div>
           <div style={{ display:"grid", gap:8 }}>
             {filtrados.map(c => {
@@ -660,3 +676,49 @@ const lbl     = { display:"block", fontSize:10, color:C.textLow, fontWeight:700,
 const iSt     = { display:"block", width:"100%", boxSizing:"border-box", background:C.input, border:`1.5px solid ${C.borderMed}`, borderRadius:8, padding:"12px 13px", color:C.textWhite, fontSize:16, marginBottom:12, outline:"none", fontFamily:"inherit", WebkitUserSelect:"text", userSelect:"text", WebkitAppearance:"none" };
 const bPrimary= { background:C.gold, color:"#000", border:"none", borderRadius:8, padding:"12px 18px", fontSize:14, fontWeight:800, cursor:"pointer", display:"block", width:"100%", textAlign:"center", marginBottom:8 };
 const bOutline= { background:"transparent", color:C.gold, border:`1.5px solid ${C.gold}`, borderRadius:8, padding:"11px 16px", fontSize:13, fontWeight:700, cursor:"pointer", display:"inline-block" };
+
+// ─── CADASTRO DE CLIENTE ─────────────────────────────────────────────────────
+function CadastroCliente({ onVoltar, onSalvar, isMobile }) {
+  const safeBottom = "env(safe-area-inset-bottom, 0px)";
+  const [f, setF] = useState({ nome:"", cidade:"", bairro:"", endereco:"", cep:"", fone:"", saldo:"" });
+  const upd = k => e => setF(p => ({ ...p, [k]:e.target.value }));
+
+  function salvar() {
+    if (!f.nome.trim()) { alert("Informe o nome do cliente."); return; }
+    if (!f.saldo || parseFloat(f.saldo.replace(",",".")) <= 0) { alert("Informe o valor do débito."); return; }
+    onSalvar(f);
+  }
+
+  return (
+    <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif", background:C.bg, minHeight:"100dvh", color:C.textHigh, paddingBottom:`calc(20px + ${safeBottom})` }}>
+      <div style={{ background:C.header, borderBottom:`1px solid ${C.border}`, padding:"14px 18px", display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:100 }}>
+        <button onClick={onVoltar} style={{ background:"none", border:`1px solid ${C.border}`, color:C.gold, borderRadius:8, padding:"6px 14px", fontSize:13, fontWeight:700, cursor:"pointer" }}>← Voltar</button>
+        <div style={{ fontWeight:800, fontSize:16, color:C.textWhite }}>➕ Novo Cliente</div>
+      </div>
+      <div style={{ padding:isMobile?"16px":"24px", maxWidth:500, margin:"0 auto" }}>
+        <div style={{ background:C.card, borderRadius:12, padding:"20px", border:`1px solid ${C.border}`, marginBottom:16 }}>
+          <div style={{ fontWeight:800, color:C.gold, marginBottom:16, fontSize:13 }}>📋 Dados do Cliente</div>
+          <label style={lbl}>Nome completo *</label>
+          <input value={f.nome} onChange={upd("nome")} placeholder="Nome do cliente ou estabelecimento" style={iSt} />
+          <label style={lbl}>Telefone</label>
+          <input value={f.fone} onChange={upd("fone")} placeholder="(27) 99999-9999" inputMode="tel" style={iSt} />
+          <label style={lbl}>Endereço</label>
+          <input value={f.endereco} onChange={upd("endereco")} placeholder="Rua, número" style={iSt} />
+          <label style={lbl}>Bairro</label>
+          <input value={f.bairro} onChange={upd("bairro")} placeholder="Bairro" style={iSt} />
+          <label style={lbl}>Cidade</label>
+          <input value={f.cidade} onChange={upd("cidade")} placeholder="Cidade" style={iSt} />
+          <label style={lbl}>CEP</label>
+          <input value={f.cep} onChange={upd("cep")} placeholder="00000-000" inputMode="numeric" style={iSt} />
+        </div>
+        <div style={{ background:C.card, borderRadius:12, padding:"20px", border:`1px solid ${C.border}`, marginBottom:16 }}>
+          <div style={{ fontWeight:800, color:C.red, marginBottom:16, fontSize:13 }}>💰 Valor do Débito</div>
+          <label style={lbl}>Saldo devedor (R$) *</label>
+          <input value={f.saldo} onChange={upd("saldo")} placeholder="0,00" inputMode="decimal" style={{ ...iSt, fontSize:22, fontWeight:800, color:C.red }} />
+        </div>
+        <button onClick={salvar} style={{ ...bPrimary, minHeight:54, fontSize:16 }}>💾 Cadastrar Cliente</button>
+        <button onClick={onVoltar} style={{ ...bOutline, width:"100%", textAlign:"center", display:"block", marginTop:8, minHeight:44 }}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
