@@ -515,8 +515,8 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
   function salvarNegociacao() {
     const entrada = fp(form.valorRecebido);
     const nParcelas = form.parcelas || 2;
-    const valorParcela = parcEstimada();
-    // Monta array de parcelas com datas
+    const saldoRestante = Math.max(0, cliente.saldo - entrada);
+    const valorParcela = nParcelas > 0 ? saldoRestante / nParcelas : 0;
     const parcelasArr = Array.from({ length: nParcelas }, (_, i) => ({
       numero: i + 1,
       valor: valorParcela,
@@ -531,13 +531,16 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
       obs: form.obs,
       saldoOriginal: cliente.saldo
     };
-    // Salva entrada como pagamento se houver
-    if (entrada > 0) {
-      const rec = { id:Date.now(), data:form.data, valor:entrada, desconto:0, abatimento:entrada, obs:`Entrada acordo - ${nParcelas}x de ${fmt(valorParcela)}` };
-      onSalvarPagamento(rec, entrada, acordo);
-    } else {
-      onSalvarPagamento(null, 0, acordo);
-    }
+    // Sempre gera recibo do acordo (com ou sem entrada)
+    const rec = {
+      id: Date.now(),
+      data: form.data,
+      valor: entrada,
+      desconto: 0,
+      abatimento: entrada,
+      obs: `Acordo: ${entrada > 0 ? `Entrada ${fmt(entrada)} + ` : ""}${nParcelas}x de ${fmt(valorParcela)}${form.obs ? " — " + form.obs : ""}`
+    };
+    onSalvarPagamento(rec, entrada, acordo);
     setModalOpen(false);
   }
   function salvarOcorrencia() {
@@ -734,8 +737,14 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
                 {Array.from({ length: form.parcelas||2 }, (_, i) => (
                   <div key={i} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
                     <span style={{ fontSize:12, color:C.gold, fontWeight:700, minWidth:24 }}>{i+1}x</span>
-                    <span style={{ fontSize:12, color:C.textMed, minWidth:60 }}>{fmt(parcEstimada())}</span>
-                    <input type="date" value={form.datasParcelas?.[i]||""} onChange={e => setForm(p => ({ ...p, datasParcelas:{ ...p.datasParcelas, [i]:e.target.value } }))} style={{ ...iSt, flex:1, marginBottom:0, fontSize:13, padding:"8px 10px" }} />
+                    <span style={{ fontSize:12, color:C.textMed, minWidth:60 }}>{fmt(Math.max(0, cliente.saldo - fp(form.valorRecebido)) / (form.parcelas||1))}</span>
+                    <input type="text" inputMode="numeric" placeholder="DD/MM/AAAA" value={form.datasParcelas?.[i]||""} onChange={e => {
+                      let v = e.target.value.replace(/\D/g,"");
+                      if (v.length > 2) v = v.slice(0,2) + "/" + v.slice(2);
+                      if (v.length > 5) v = v.slice(0,5) + "/" + v.slice(5);
+                      if (v.length > 10) v = v.slice(0,10);
+                      setForm(p => ({ ...p, datasParcelas:{ ...p.datasParcelas, [i]:v } }));
+                    }} style={{ ...iSt, flex:1, marginBottom:0, fontSize:14, padding:"8px 10px" }} />
                   </div>
                 ))}
                 <label style={lbl}>Observações</label>
