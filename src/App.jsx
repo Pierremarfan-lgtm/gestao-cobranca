@@ -169,8 +169,11 @@ export default function App() {
           const novos = dados.filter(s => !CLIENTES_RAW.find(c => c.id === s.id));
           setClientes([...fixos, ...novos]);
         }
-      } catch(e) { console.error(e); }
-      setCarregando(false);
+      } catch(e) {
+        console.error("Firebase erro:", e);
+      } finally {
+        setCarregando(false);
+      }
     }
     carregar();
   }, []);
