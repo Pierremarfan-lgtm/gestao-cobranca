@@ -153,9 +153,6 @@ export default function App() {
   const [form, setForm]             = useState({});
   const [carregando, setCarregando] = useState(true);
 
-  // Se não logado, mostra tela de login
-  if (!usuario) return <Login vendedores={vendedores} senhaGestor={senhaGestor} onLogin={setUsuario} isMobile={isMobile} />;
-
   // ── Carrega dados do Firebase ──
   useEffect(() => {
     async function carregar() {
@@ -266,6 +263,9 @@ export default function App() {
 
   if (carregando)
     return <div style={{ background:C.bg, minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", color:C.gold, fontSize:18, fontWeight:700, fontFamily:"'Segoe UI',sans-serif" }}>⏳ Carregando...</div>;
+
+  if (!usuario)
+    return <Login vendedores={vendedores} senhaGestor={senhaGestor} onLogin={setUsuario} isMobile={isMobile} />;
 
   if (view === "cadastro")
     return <CadastroCliente onVoltar={() => setView("lista")} onSalvar={adicionarCliente} isMobile={isMobile} vendedores={vendedores} onAdicionarVendedor={adicionarVendedor} />;
