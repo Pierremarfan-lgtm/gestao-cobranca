@@ -196,9 +196,9 @@ export default function App() {
   }
 
   const clienteSel = clientes.find(c => c.id === selectedId);
-  const cidades    = ["Todas", ...new Set(CLIENTES_RAW.map(c => c.cidade))];
+  const cidades    = ["Todas", ...new Set(clientes.map(c => c.cidade))];
 
-  const totalGeral    = CLIENTES_RAW.reduce((s, c) => s + c.saldo, 0);
+  const totalGeral    = clientes.reduce((s, c) => s + c.saldo + c.pagamentos.reduce((p, pg) => p + pg.abatimento, 0), 0);
   const totalRecebido = clientes.reduce((s, c) => s + c.pagamentos.reduce((p, pg) => p + pg.valor, 0), 0);
   const saldoAtual    = clientes.reduce((s, c) => s + c.saldo, 0);
   const contatados    = clientes.filter(c => c.ocorrencias.length > 0).length;
