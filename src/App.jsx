@@ -265,7 +265,7 @@ export default function App() {
   if (view === "recibo" && reciboData)
     return <Recibo data={reciboData} onVoltar={() => setView("cliente")} isMobile={isMobile} />;
   if (view === "cliente" && clienteSel)
-    return <ClienteDetalhe cliente={clienteSel} onVoltar={() => { setView("lista"); setSelectedId(null); }} isMobile={isMobile} navH={navH}
+    return <ClienteDetalhe cliente={clienteSel} onVoltar={() => { setView("lista"); setSelectedId(null); }} isMobile={isMobile} navH={navH} perfil={usuario.perfil}
       onDeletar={() => {
         atualizarClientes(prev => prev.filter(c => c.id !== selectedId));
         setSelectedId(null);
@@ -466,7 +466,7 @@ export default function App() {
 }
 
 // ─── DETALHE DO CLIENTE ──────────────────────────────────────────────────────
-function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, onSalvarOcorrencia, onDeletar }) {
+function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, onSalvarOcorrencia, onDeletar, perfil }) {
   const st = statusInfo(cliente);
   const safeBottom = "env(safe-area-inset-bottom, 0px)";
   const [modalOpen, setModalOpen] = useState(false);
@@ -508,7 +508,7 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
           <div style={{ fontSize:11, color:C.textLow }}>{cliente.bairro} · {cliente.cidade}</div>
         </div>
         <Badge label={st.label} cor={st.cor} bg={st.bg} />
-        <button onClick={() => { if(window.confirm(`Deletar "${cliente.nome}" e todos os seus dados?\n\nEsta ação não pode ser desfeita!`)) { onDeletar(); } }} style={{ background:"none", border:`1px solid ${C.red}`, color:C.red, borderRadius:8, padding:"6px 10px", fontSize:13, cursor:"pointer", flexShrink:0 }}>🗑️</button>
+        {perfil === "gestor" && <button onClick={() => { if(window.confirm(`Deletar "${cliente.nome}" e todos os seus dados?\n\nEsta ação não pode ser desfeita!`)) { onDeletar(); } }} style={{ background:"none", border:`1px solid ${C.red}`, color:C.red, borderRadius:8, padding:"6px 10px", fontSize:13, cursor:"pointer", flexShrink:0 }}>🗑️</button>}
       </div>
 
       <div style={{ maxWidth:720, margin:"0 auto", padding:isMobile?"14px 12px":"22px" }}>
@@ -571,7 +571,7 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                   <span style={{ fontSize:11, color:C.textLow, fontWeight:600 }}>{o.data}</span>
                   <button onClick={() => { setEditOcId(o.id); setEditOcTexto(o.texto); }} style={{ background:"none", border:`1px solid ${C.gold}`, color:C.gold, borderRadius:6, padding:"2px 8px", fontSize:11, cursor:"pointer", fontWeight:700 }}>✏️</button>
-                  <button onClick={() => { if(window.confirm("Excluir esta ocorrência?")) { onSalvarOcorrencia(null, o.id); } }} style={{ background:"none", border:`1px solid ${C.red}`, color:C.red, borderRadius:6, padding:"2px 8px", fontSize:11, cursor:"pointer", fontWeight:700 }}>🗑️</button>
+                  {perfil === "gestor" && <button onClick={() => { if(window.confirm("Excluir esta ocorrência?")) { onSalvarOcorrencia(null, o.id); } }} style={{ background:"none", border:`1px solid ${C.red}`, color:C.red, borderRadius:6, padding:"2px 8px", fontSize:11, cursor:"pointer", fontWeight:700 }}>🗑️</button>}
                 </div>
               </div>
               {editOcId === o.id ? (
