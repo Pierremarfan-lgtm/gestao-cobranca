@@ -171,7 +171,7 @@ export default function App() {
           // Clientes
           const fixos = CLIENTES_RAW.map(c => {
             const salvo = dados.find(s => s.id === c.id);
-            return salvo ? { ...c, saldo:salvo.saldo, ocorrencias:salvo.ocorrencias||[], pagamentos:salvo.pagamentos||[], vendedor:salvo.vendedor||"Viviane" } : { ...c, ocorrencias:[], pagamentos:[], vendedor:"Viviane" };
+            return salvo ? { ...c, saldo:salvo.saldo, ocorrencias:salvo.ocorrencias||[], pagamentos:salvo.pagamentos||[], acordos:salvo.acordos||[], vendedor:salvo.vendedor||"Viviane" } : { ...c, ocorrencias:[], pagamentos:[], acordos:[], vendedor:"Viviane" };
           });
           const novos = dados.filter(s => !CLIENTES_RAW.find(c => c.id === s.id));
           setClientes([...fixos, ...novos]);
@@ -191,7 +191,7 @@ export default function App() {
   async function salvarFirebase(novosClientes, novosVendedores, novaSenha) {
     try {
       await setDoc(doc(db, "cobranca-viviane", "dados"), {
-        clientes: novosClientes.map(c => ({ id:c.id, nome:c.nome, cidade:c.cidade, bairro:c.bairro, endereco:c.endereco, cep:c.cep, fone:c.fone, saldo:c.saldo, vendedor:c.vendedor||"Viviane", ocorrencias:c.ocorrencias, pagamentos:c.pagamentos })),
+        clientes: novosClientes.map(c => ({ id:c.id, nome:c.nome, cidade:c.cidade, bairro:c.bairro, endereco:c.endereco, cep:c.cep, fone:c.fone, saldo:c.saldo, vendedor:c.vendedor||"Viviane", ocorrencias:c.ocorrencias, pagamentos:c.pagamentos, acordos:c.acordos||[] })),
         vendedores: novosVendedores || vendedores,
         senhaGestor: novaSenha || senhaGestor,
         atualizado: new Date().toISOString()
@@ -266,16 +266,35 @@ export default function App() {
     return <Recibo data={reciboData} onVoltar={() => setView("cliente")} isMobile={isMobile} />;
   if (view === "cliente" && clienteSel)
     return <ClienteDetalhe cliente={clienteSel} onVoltar={() => { setView("lista"); setSelectedId(null); }} isMobile={isMobile} navH={navH} perfil={usuario.perfil}
+      onMarcarParcela={(acordoId, parcelaIdx) => {
+        atualizarClientes(prev => prev.map(c => {
+          if (c.id !== selectedId) return c;
+          const novosAcordos = (c.acordos||[]).map(a => {
+            if (a.id !== acordoId) return a;
+            const novasParcelas = a.parcelas.map((p, i) => i === parcelaIdx ? { ...p, paga:true } : p);
+            return { ...a, parcelas:novasParcelas };
+          });
+          return { ...c, acordos:novosAcordos };
+        }));
+      }}
       onDeletar={() => {
         atualizarClientes(prev => prev.filter(c => c.id !== selectedId));
         setSelectedId(null);
         setView("lista");
       }}
-      onSalvarPagamento={(rec, abat) => {
+      onSalvarPagamento={(rec, abat, acordo) => {
         const saldoAntes = clienteSel.saldo;
-        atualizarClientes(prev => prev.map(c => c.id !== selectedId ? c : { ...c, saldo:Math.max(0, c.saldo - abat), pagamentos:[...c.pagamentos, rec] }));
-        setReciboData({ ...rec, cliente:clienteSel, saldoAntes, saldoDepois:Math.max(0, saldoAntes - abat) });
-        setView("recibo");
+        const novoSaldo = Math.max(0, saldoAntes - abat);
+        atualizarClientes(prev => prev.map(c => {
+          if (c.id !== selectedId) return c;
+          const novoPags = rec ? [...c.pagamentos, rec] : c.pagamentos;
+          const novosAcordos = acordo ? [...(c.acordos||[]), acordo] : (c.acordos||[]);
+          return { ...c, saldo:novoSaldo, pagamentos:novoPags, acordos:novosAcordos };
+        }));
+        if (rec) {
+          setReciboData({ ...rec, cliente:clienteSel, saldoAntes, saldoDepois:novoSaldo });
+          setView("recibo");
+        }
       }}
       onSalvarOcorrencia={(oc, excluirId) => {
         if (excluirId) {
@@ -466,7 +485,7 @@ export default function App() {
 }
 
 // ─── DETALHE DO CLIENTE ──────────────────────────────────────────────────────
-function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, onSalvarOcorrencia, onDeletar, perfil }) {
+function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, onSalvarOcorrencia, onDeletar, perfil, onMarcarParcela }) {
   const st = statusInfo(cliente);
   const safeBottom = "env(safe-area-inset-bottom, 0px)";
   const [modalOpen, setModalOpen] = useState(false);
@@ -477,7 +496,7 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
 
   function abrirModal(tab) {
     setModalTab(tab);
-    setForm({ data:hoje(), valorRecebido:"", desconto:"", parcelas:2, obs:"", ocorrencia:"", tipoOcorrencia:TIPOS_OC[0] });
+    setForm({ data:hoje(), valorRecebido:"", desconto:"", parcelas:2, datasParcelas:{}, obs:"", ocorrencia:"", tipoOcorrencia:TIPOS_OC[0] });
     setModalOpen(true);
   }
   const fp = s => parseFloat((s||"").replace(",",".")) || 0;
@@ -490,6 +509,35 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
     const abat = val + desc;
     const rec = { id:Date.now(), data:form.data, valor:val, desconto:desc, abatimento:abat, obs:form.obs };
     onSalvarPagamento(rec, abat);
+    setModalOpen(false);
+  }
+
+  function salvarNegociacao() {
+    const entrada = fp(form.valorRecebido);
+    const nParcelas = form.parcelas || 2;
+    const valorParcela = parcEstimada();
+    // Monta array de parcelas com datas
+    const parcelasArr = Array.from({ length: nParcelas }, (_, i) => ({
+      numero: i + 1,
+      valor: valorParcela,
+      data: form.datasParcelas?.[i] || "",
+      paga: false
+    }));
+    const acordo = {
+      id: Date.now(),
+      data: form.data,
+      entrada,
+      parcelas: parcelasArr,
+      obs: form.obs,
+      saldoOriginal: cliente.saldo
+    };
+    // Salva entrada como pagamento se houver
+    if (entrada > 0) {
+      const rec = { id:Date.now(), data:form.data, valor:entrada, desconto:0, abatimento:entrada, obs:`Entrada acordo - ${nParcelas}x de ${fmt(valorParcela)}` };
+      onSalvarPagamento(rec, entrada, acordo);
+    } else {
+      onSalvarPagamento(null, 0, acordo);
+    }
     setModalOpen(false);
   }
   function salvarOcorrencia() {
@@ -527,6 +575,56 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
         </div>
 
         {/* Pagamentos */}
+        {/* Alerta de parcelas vencidas */}
+        {(cliente.acordos||[]).length > 0 && (() => {
+          const hoje2 = new Date().toISOString().split("T")[0];
+          const vencidas = (cliente.acordos||[]).flatMap(a => a.parcelas.filter(p => !p.paga && p.data && p.data < hoje2));
+          if (vencidas.length === 0) return null;
+          return (
+            <div style={{ background:C.redBg, border:`2px solid ${C.red}`, borderRadius:12, padding:"14px 16px", marginBottom:14 }}>
+              <div style={{ fontWeight:800, color:C.red, fontSize:13, marginBottom:8 }}>🚨 {vencidas.length} Parcela{vencidas.length>1?"s":""} Vencida{vencidas.length>1?"s":""}!</div>
+              {vencidas.map((p, i) => (
+                <div key={i} style={{ fontSize:12, color:C.textHigh, marginBottom:4 }}>• Parcela {p.numero}x — {fmt(p.valor)} — venceu em {p.data}</div>
+              ))}
+            </div>
+          );
+        })()}
+
+        {/* Acordos */}
+        {(cliente.acordos||[]).length > 0 && (
+          <div style={{ background:C.card, borderRadius:12, padding:isMobile?"14px":"20px", marginBottom:14, border:`1px solid ${C.gold}44`, boxShadow:C.shadow }}>
+            <div style={{ fontWeight:800, color:C.gold, marginBottom:12, fontSize:13 }}>🤝 Acordos de Parcelamento</div>
+            {(cliente.acordos||[]).map((a, ai) => {
+              const hoje2 = new Date().toISOString().split("T")[0];
+              return (
+                <div key={a.id} style={{ background:C.cardAlt, borderRadius:8, padding:"12px 14px", marginBottom:10, border:`1px solid ${C.border}` }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
+                    <span style={{ fontSize:12, fontWeight:700, color:C.gold }}>Acordo {ai+1} — {a.data}</span>
+                    {a.entrada > 0 && <span style={{ fontSize:12, color:C.green }}>Entrada: {fmt(a.entrada)}</span>}
+                  </div>
+                  {a.obs && <div style={{ fontSize:12, color:C.textMed, marginBottom:8 }}>{a.obs}</div>}
+                  <div style={{ display:"grid", gap:6 }}>
+                    {a.parcelas.map((p, pi) => {
+                      const vencida = p.data && p.data < hoje2 && !p.paga;
+                      const cor = p.paga ? C.green : vencida ? C.red : C.textHigh;
+                      return (
+                        <div key={pi} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 8px", background:vencida?C.redBg:p.paga?C.greenBg:C.card, borderRadius:6, border:`1px solid ${vencida?C.red:p.paga?C.green:C.border}` }}>
+                          <span style={{ fontSize:11, fontWeight:800, color:cor, minWidth:24 }}>{p.numero}x</span>
+                          <span style={{ fontSize:12, fontWeight:700, color:cor, flex:1 }}>{fmt(p.valor)}</span>
+                          <span style={{ fontSize:11, color:C.textLow }}>{p.data||"sem data"}</span>
+                          {!p.paga && perfil === "gestor" && <button onClick={() => onMarcarParcela(a.id, pi)} style={{ background:C.green, border:"none", color:"#000", borderRadius:4, padding:"2px 8px", fontSize:10, fontWeight:700, cursor:"pointer" }}>✓ Paga</button>}
+                          {p.paga && <span style={{ fontSize:10, color:C.green, fontWeight:700 }}>✓ Paga</span>}
+                          {vencida && <span style={{ fontSize:10, color:C.red, fontWeight:700 }}>VENCIDA</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {cliente.pagamentos.length > 0 && (
           <div style={{ background:C.card, borderRadius:12, padding:isMobile?"14px":"20px", marginBottom:14, border:`1px solid ${C.border}`, boxShadow:C.shadow }}>
             <div style={{ fontWeight:800, color:C.green, marginBottom:12, fontSize:13 }}>✅ Histórico de Pagamentos</div>
@@ -623,7 +721,7 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
                 <label style={lbl}>Entrada (opcional)</label>
                 <input placeholder="0,00" inputMode="decimal" value={form.valorRecebido||""} onChange={e => setForm(p => ({ ...p, valorRecebido:e.target.value }))} style={iSt} />
                 <label style={lbl}>Número de Parcelas</label>
-                <select value={form.parcelas||2} onChange={e => setForm(p => ({ ...p, parcelas:parseInt(e.target.value) }))} style={iSt}>
+                <select value={form.parcelas||2} onChange={e => setForm(p => ({ ...p, parcelas:parseInt(e.target.value), datasParcelas:{} }))} style={iSt}>
                   {[1,2,3,4,5,6,8,10,12].map(n => <option key={n} value={n}>{n}x</option>)}
                 </select>
                 <div style={{ background:C.goldBg, border:`1px solid ${C.gold}44`, borderRadius:8, padding:14, marginBottom:14 }}>
@@ -632,9 +730,17 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
                     <div><div style={{ fontSize:10, color:C.textLow, fontWeight:600, marginBottom:3 }}>PARCELA ESTIMADA</div><div style={{ fontSize:16, fontWeight:900, color:C.gold }}>{fmt(parcEstimada())}</div></div>
                   </div>
                 </div>
-                <label style={lbl}>Condições acordadas</label>
-                <textarea value={form.obs||""} onChange={e => setForm(p => ({ ...p, obs:e.target.value }))} placeholder="Ex: paga R$300 todo dia 5…" style={{ ...iSt, height:60, resize:"none" }} />
-                <button onClick={salvarPagamento} style={{ ...bPrimary, minHeight:50 }}>✅ Confirmar Negociação</button>
+                <label style={lbl}>📅 Datas das Parcelas</label>
+                {Array.from({ length: form.parcelas||2 }, (_, i) => (
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                    <span style={{ fontSize:12, color:C.gold, fontWeight:700, minWidth:24 }}>{i+1}x</span>
+                    <span style={{ fontSize:12, color:C.textMed, minWidth:60 }}>{fmt(parcEstimada())}</span>
+                    <input type="date" value={form.datasParcelas?.[i]||""} onChange={e => setForm(p => ({ ...p, datasParcelas:{ ...p.datasParcelas, [i]:e.target.value } }))} style={{ ...iSt, flex:1, marginBottom:0, fontSize:13, padding:"8px 10px" }} />
+                  </div>
+                ))}
+                <label style={lbl}>Observações</label>
+                <textarea value={form.obs||""} onChange={e => setForm(p => ({ ...p, obs:e.target.value }))} placeholder="Ex: cliente ligará para confirmar…" style={{ ...iSt, height:60, resize:"none" }} />
+                <button onClick={salvarNegociacao} style={{ ...bPrimary, minHeight:50 }}>✅ Confirmar Negociação</button>
               </>}
               {modalTab === "ocorrencia" && <>
                 <label style={lbl}>Tipo de Ocorrência</label>
