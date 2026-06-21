@@ -243,7 +243,13 @@ export default function App() {
     return <div style={{ background:"#0D1B2A", minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", color:"#F0C040", fontSize:18, fontWeight:700, fontFamily:"'Segoe UI',sans-serif" }}>⏳ Carregando...</div>;
 
   if (!usuario)
-    return <Login vendedores={vendedores} senhaGestor={senhaGestor} onLogin={setUsuario} isMobile={isMobile} />;
+    return <Login vendedores={vendedores} senhaGestor={senhaGestor} onLogin={setUsuario} isMobile={isMobile}
+      onCadastrarVendedor={(nome, senha) => {
+        const novos = [...vendedores, { nome, senha }];
+        setVendedores(novos);
+        salvarFirebase(clientes, novos);
+      }}
+    />;
 
   if (view === "cadastro")
     return <CadastroCliente onVoltar={() => setView("lista")} onSalvar={adicionarCliente} isMobile={isMobile} vendedores={vendedores} onAdicionarVendedor={adicionarVendedor} />;
@@ -771,11 +777,15 @@ function CadastroCliente({ onVoltar, onSalvar, isMobile, vendedores, onAdicionar
 }
 
 // ─── LOGIN ───────────────────────────────────────────────────────────────────
-function Login({ vendedores, senhaGestor, onLogin, isMobile }) {
-  const [tipo, setTipo]   = useState("vendedor");
-  const [nome, setNome]   = useState("");
-  const [senha, setSenha] = useState("");
-  const [erro, setErro]   = useState("");
+function Login({ vendedores, senhaGestor, onLogin, isMobile, onCadastrarVendedor }) {
+  const [tipo, setTipo]         = useState("vendedor");
+  const [nome, setNome]         = useState("");
+  const [senha, setSenha]       = useState("");
+  const [erro, setErro]         = useState("");
+  const [painelGestor, setPainelGestor] = useState(false);
+  const [novoNome, setNovoNome] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [sucesso, setSucesso]   = useState("");
 
   function entrar() {
     setErro("");
@@ -798,6 +808,48 @@ function Login({ vendedores, senhaGestor, onLogin, isMobile }) {
       }
     }
   }
+
+  function cadastrarVendedor() {
+    if (!novoNome.trim()) { alert("Informe o nome."); return; }
+    if (!novaSenha.trim() || novaSenha.length < 4) { alert("Senha deve ter ao menos 4 caracteres."); return; }
+    if (vendedores.find(v => v.nome === novoNome.trim())) { alert("Vendedor já cadastrado."); return; }
+    onCadastrarVendedor(novoNome.trim(), novaSenha.trim());
+    setSucesso(`Vendedor "${novoNome.trim()}" cadastrado!`);
+    setNovoNome("");
+    setNovaSenha("");
+    setTimeout(() => setSucesso(""), 3000);
+  }
+
+  if (painelGestor) return (
+    <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif", background:C.bg, minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div style={{ width:"100%", maxWidth:400 }}>
+        <div style={{ textAlign:"center", marginBottom:24 }}>
+          <div style={{ fontSize:11, color:C.gold, letterSpacing:4, textTransform:"uppercase", fontWeight:700 }}>Bio Ozônio</div>
+          <div style={{ fontSize:22, fontWeight:900, color:C.textWhite }}>👥 Gerenciar Vendedores</div>
+        </div>
+        <div style={{ background:C.card, borderRadius:16, padding:24, border:`1px solid ${C.border}`, marginBottom:16 }}>
+          <div style={{ fontWeight:800, color:C.gold, marginBottom:16, fontSize:13 }}>➕ Cadastrar Novo Vendedor</div>
+          <label style={lbl}>Nome</label>
+          <input value={novoNome} onChange={e => setNovoNome(e.target.value)} placeholder="Nome do vendedor" style={iSt} />
+          <label style={lbl}>Senha</label>
+          <input type="password" value={novaSenha} onChange={e => setNovaSenha(e.target.value)} placeholder="Mínimo 4 caracteres" style={iSt} />
+          {sucesso && <div style={{ color:C.green, fontSize:13, marginBottom:12, fontWeight:600 }}>✅ {sucesso}</div>}
+          <button onClick={cadastrarVendedor} style={{ ...bPrimary, minHeight:48 }}>💾 Cadastrar</button>
+        </div>
+        <div style={{ background:C.card, borderRadius:16, padding:24, border:`1px solid ${C.border}`, marginBottom:16 }}>
+          <div style={{ fontWeight:800, color:C.blue, marginBottom:12, fontSize:13 }}>📋 Vendedores Cadastrados</div>
+          {vendedores.length === 0 && <div style={{ color:C.textLow, fontSize:13 }}>Nenhum vendedor cadastrado.</div>}
+          {vendedores.map(v => (
+            <div key={v.nome} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:`1px solid ${C.border}` }}>
+              <div style={{ color:C.textWhite, fontWeight:600 }}>👤 {v.nome}</div>
+              <div style={{ color:C.textLow, fontSize:12 }}>Senha: {v.senha}</div>
+            </div>
+          ))}
+        </div>
+        <button onClick={() => setPainelGestor(false)} style={{ ...bOutline, width:"100%", textAlign:"center", display:"block", minHeight:48 }}>← Voltar ao Login</button>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif", background:C.bg, minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
@@ -829,7 +881,8 @@ function Login({ vendedores, senhaGestor, onLogin, isMobile }) {
             placeholder="••••••••" style={iSt} />
 
           {erro && <div style={{ color:C.red, fontSize:13, marginBottom:12, textAlign:"center", fontWeight:600 }}>{erro}</div>}
-          <button onClick={entrar} style={{ ...bPrimary, minHeight:52, fontSize:16, marginBottom:0 }}>Entrar →</button>
+          <button onClick={entrar} style={{ ...bPrimary, minHeight:52, fontSize:16, marginBottom:8 }}>Entrar →</button>
+          {tipo === "gestor" && <button onClick={() => { if(senha === senhaGestor) { setPainelGestor(true); } else { setErro("Digite a senha correta para acessar."); } }} style={{ ...bOutline, width:"100%", textAlign:"center", display:"block", minHeight:44, fontSize:13 }}>👥 Gerenciar Vendedores</button>}
         </div>
         <div style={{ textAlign:"center", marginTop:16, fontSize:11, color:C.textMuted }}>
           Senha padrão do gestor: <strong style={{ color:C.gold }}>bio2024</strong>
