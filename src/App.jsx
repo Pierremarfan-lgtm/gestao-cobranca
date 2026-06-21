@@ -138,10 +138,10 @@ function Badge({ label, cor, bg }) {
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const isMobile = useIsMobile();
-  const [usuario, setUsuario]       = useState(null); // { nome, perfil: "gestor"|"vendedor" }
+  const [usuario, setUsuario]       = useState(null);
   const [clientes, setClientes]     = useState(() => CLIENTES_RAW.map(c => ({ ...c, ocorrencias:[], pagamentos:[] })));
-  const [vendedores, setVendedores] = useState(["Viviane"]);
-  const [senhaGestor, setSenhaGestor] = useState("bio2024"); // senha padrão
+  const [vendedores, setVendedores] = useState([{ nome:"Viviane", senha:"viviane123" }]);
+  const [senhaGestor, setSenhaGestor] = useState("bio2024");
   const [view, setView]             = useState("dashboard");
   const [selectedId, setSelectedId] = useState(null);
   const [reciboData, setReciboData] = useState(null);
@@ -198,15 +198,15 @@ export default function App() {
     });
   }
 
-  function adicionarVendedor(nome) {
-    const novos = [...vendedores, nome];
+  function adicionarVendedor(nome, senha) {
+    const novos = [...vendedores, { nome, senha }];
     setVendedores(novos);
     salvarFirebase(clientes, novos);
   }
 
   function adicionarCliente(dados) {
     const novoId = Date.now();
-    const novo = { id:novoId, nome:dados.nome, cidade:dados.cidade, bairro:dados.bairro, endereco:dados.endereco, cep:dados.cep, fone:dados.fone, saldo:parseFloat((dados.saldo||"0").replace(",","."))||0, vendedor:dados.vendedor||vendedores[0]||"Viviane", ocorrencias:[], pagamentos:[] };
+    const novo = { id:novoId, nome:dados.nome, cidade:dados.cidade, bairro:dados.bairro, endereco:dados.endereco, cep:dados.cep, fone:dados.fone, saldo:parseFloat((dados.saldo||"0").replace(",","."))||0, vendedor:dados.vendedor||vendedores[0]?.nome||"Viviane", ocorrencias:[], pagamentos:[] };
     atualizarClientes(prev => [...prev, novo]);
     setView("lista");
   }
@@ -420,7 +420,7 @@ export default function App() {
             </select>
             <select value={filtroVendedor} onChange={e => setFiltroVendedor(e.target.value)} style={{ ...iSt, flex:1, marginBottom:0 }}>
               <option value="Todos">👤 Todos</option>
-              {vendedores.map(v => <option key={v}>{v}</option>)}
+              {vendedores.map(v => <option key={v.nome} value={v.nome}>{v.nome}</option>)}
             </select>
           </div>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
@@ -719,7 +719,7 @@ const bOutline= { background:"transparent", color:C.gold, border:`1.5px solid ${
 // ─── CADASTRO DE CLIENTE ─────────────────────────────────────────────────────
 function CadastroCliente({ onVoltar, onSalvar, isMobile, vendedores, onAdicionarVendedor }) {
   const safeBottom = "env(safe-area-inset-bottom, 0px)";
-  const [f, setF] = useState({ nome:"", cidade:"", bairro:"", endereco:"", cep:"", fone:"", saldo:"", vendedor:vendedores[0]||"" });
+  const [f, setF] = useState({ nome:"", cidade:"", bairro:"", endereco:"", cep:"", fone:"", saldo:"", vendedor:vendedores[0]?.nome||"" });
   const [novoVendedor, setNovoVendedor] = useState("");
   const [adicionandoVendedor, setAdicionandoVendedor] = useState(false);
   const upd = k => e => setF(p => ({ ...p, [k]:e.target.value }));
@@ -732,7 +732,8 @@ function CadastroCliente({ onVoltar, onSalvar, isMobile, vendedores, onAdicionar
 
   function salvarNovoVendedor() {
     if (!novoVendedor.trim()) return;
-    onAdicionarVendedor(novoVendedor.trim());
+    const senha = prompt("Defina uma senha para " + novoVendedor.trim() + ":") || "123456";
+    onAdicionarVendedor(novoVendedor.trim(), senha);
     setF(p => ({ ...p, vendedor:novoVendedor.trim() }));
     setNovoVendedor("");
     setAdicionandoVendedor(false);
@@ -758,7 +759,7 @@ function CadastroCliente({ onVoltar, onSalvar, isMobile, vendedores, onAdicionar
           ) : (
             <div style={{ display:"flex", gap:8, marginBottom:12 }}>
               <select value={f.vendedor} onChange={upd("vendedor")} style={{ ...iSt, flex:1, marginBottom:0 }}>
-                {vendedores.map(v => <option key={v}>{v}</option>)}
+                {vendedores.map(v => <option key={v.nome} value={v.nome}>{v.nome}</option>)}
               </select>
               <button onClick={() => setAdicionandoVendedor(true)} style={{ background:C.goldBg, border:`1px solid ${C.gold}`, color:C.gold, borderRadius:8, padding:"0 14px", cursor:"pointer", fontWeight:700, fontSize:13, whiteSpace:"nowrap" }}>+ Novo</button>
             </div>
@@ -793,7 +794,7 @@ function CadastroCliente({ onVoltar, onSalvar, isMobile, vendedores, onAdicionar
 
 // ─── LOGIN ───────────────────────────────────────────────────────────────────
 function Login({ vendedores, senhaGestor, onLogin, isMobile }) {
-  const [tipo, setTipo]   = useState("vendedor"); // "gestor" | "vendedor"
+  const [tipo, setTipo]   = useState("vendedor");
   const [nome, setNome]   = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro]   = useState("");
@@ -801,6 +802,7 @@ function Login({ vendedores, senhaGestor, onLogin, isMobile }) {
   function entrar() {
     setErro("");
     if (tipo === "gestor") {
+      if (!senha) { setErro("Digite a senha."); return; }
       if (senha === senhaGestor) {
         onLogin({ nome:"Gestor", perfil:"gestor" });
       } else {
@@ -808,7 +810,14 @@ function Login({ vendedores, senhaGestor, onLogin, isMobile }) {
       }
     } else {
       if (!nome) { setErro("Selecione seu nome."); return; }
-      onLogin({ nome, perfil:"vendedor" });
+      if (!senha) { setErro("Digite sua senha."); return; }
+      const vendedor = vendedores.find(v => v.nome === nome);
+      if (!vendedor) { setErro("Vendedor não encontrado."); return; }
+      if (senha === vendedor.senha) {
+        onLogin({ nome, perfil:"vendedor" });
+      } else {
+        setErro("Senha incorreta.");
+      }
     }
   }
 
@@ -823,29 +832,30 @@ function Login({ vendedores, senhaGestor, onLogin, isMobile }) {
         <div style={{ background:C.card, borderRadius:16, padding:28, border:`1px solid ${C.border}` }}>
           <div style={{ display:"flex", gap:8, marginBottom:22 }}>
             {[["vendedor","👤 Vendedor"],["gestor","🔐 Gestor"]].map(([t, l]) => (
-              <button key={t} onClick={() => { setTipo(t); setErro(""); }} style={{ flex:1, padding:"10px", borderRadius:8, border:`2px solid ${tipo===t?C.gold:C.border}`, background:tipo===t?C.goldBg:"transparent", color:tipo===t?C.gold:C.textLow, fontWeight:700, fontSize:13, cursor:"pointer" }}>{l}</button>
+              <button key={t} onClick={() => { setTipo(t); setErro(""); setSenha(""); setNome(""); }}
+                style={{ flex:1, padding:"10px", borderRadius:8, border:`2px solid ${tipo===t?C.gold:C.border}`, background:tipo===t?C.goldBg:"transparent", color:tipo===t?C.gold:C.textLow, fontWeight:700, fontSize:13, cursor:"pointer" }}>{l}</button>
             ))}
           </div>
 
-          {tipo === "vendedor" ? (
-            <>
-              <label style={lbl}>Seu nome</label>
-              <select value={nome} onChange={e => setNome(e.target.value)} style={iSt}>
-                <option value="">Selecione...</option>
-                {vendedores.map(v => <option key={v}>{v}</option>)}
-              </select>
-            </>
-          ) : (
-            <>
-              <label style={lbl}>Senha do gestor</label>
-              <input type="password" value={senha} onChange={e => setSenha(e.target.value)} onKeyDown={e => e.key==="Enter" && entrar()} placeholder="••••••••" style={iSt} />
-            </>
-          )}
+          {tipo === "vendedor" && <>
+            <label style={lbl}>Seu nome</label>
+            <select value={nome} onChange={e => { setNome(e.target.value); setSenha(""); setErro(""); }} style={{ ...iSt }}>
+              <option value="">Selecione...</option>
+              {vendedores.map(v => <option key={v.nome} value={v.nome}>{v.nome}</option>)}
+            </select>
+          </>}
 
-          {erro && <div style={{ color:C.red, fontSize:13, marginBottom:12, textAlign:"center" }}>{erro}</div>}
+          <label style={lbl}>{tipo === "gestor" ? "Senha do gestor" : "Sua senha"}</label>
+          <input type="password" value={senha} onChange={e => setSenha(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && entrar()}
+            placeholder="••••••••" style={iSt} />
+
+          {erro && <div style={{ color:C.red, fontSize:13, marginBottom:12, textAlign:"center", fontWeight:600 }}>{erro}</div>}
           <button onClick={entrar} style={{ ...bPrimary, minHeight:52, fontSize:16, marginBottom:0 }}>Entrar →</button>
         </div>
-        <div style={{ textAlign:"center", marginTop:16, fontSize:11, color:C.textMuted }}>Senha padrão do gestor: bio2024</div>
+        <div style={{ textAlign:"center", marginTop:16, fontSize:11, color:C.textMuted }}>
+          Senha padrão do gestor: <strong style={{ color:C.gold }}>bio2024</strong>
+        </div>
       </div>
     </div>
   );
