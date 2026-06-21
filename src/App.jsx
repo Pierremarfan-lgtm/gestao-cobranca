@@ -282,19 +282,57 @@ export default function App() {
         setSelectedId(null);
         setView("lista");
       }}
-      onSalvarPagamento={(rec, abat, acordo) => {
+      onSalvarAcordo={(acordo, reciboAcordo) => {
+        atualizarClientes(prev => prev.map(c => {
+          if (c.id !== selectedId) return c;
+          return { ...c, acordos:[...(c.acordos||[]), acordo] };
+        }));
+        setReciboData({ ...reciboAcordo, cliente:clienteSel, saldoAntes:clienteSel.saldo, saldoDepois:clienteSel.saldo });
+        setView("recibo");
+      }}
+      onSalvarPagamento={(rec, abat) => {
         const saldoAntes = clienteSel.saldo;
         const novoSaldo = Math.max(0, saldoAntes - abat);
         atualizarClientes(prev => prev.map(c => {
           if (c.id !== selectedId) return c;
-          const novoPags = rec ? [...c.pagamentos, rec] : c.pagamentos;
-          const novosAcordos = acordo ? [...(c.acordos||[]), acordo] : (c.acordos||[]);
-          return { ...c, saldo:novoSaldo, pagamentos:novoPags, acordos:novosAcordos };
+          return { ...c, saldo:novoSaldo, pagamentos:[...c.pagamentos, rec] };
         }));
-        if (rec) {
-          setReciboData({ ...rec, cliente:clienteSel, saldoAntes, saldoDepois:novoSaldo });
-          setView("recibo");
-        }
+        setReciboData({ ...rec, cliente:clienteSel, saldoAntes, saldoDepois:novoSaldo });
+        setView("recibo");
+      }}
+      onMarcarEntrada={(acordoId) => {
+        const acordo = clienteSel.acordos?.find(a => a.id === acordoId);
+        if (!acordo || acordo.entradaPaga) return;
+        const saldoAntes = clienteSel.saldo;
+        const novoSaldo = Math.max(0, saldoAntes - acordo.entrada);
+        const rec = { id:Date.now(), data:hoje(), valor:acordo.entrada, desconto:0, abatimento:acordo.entrada, obs:`Entrada do acordo de ${acordo.data}` };
+        atualizarClientes(prev => prev.map(c => {
+          if (c.id !== selectedId) return c;
+          const novosAcordos = (c.acordos||[]).map(a => a.id === acordoId ? { ...a, entradaPaga:true } : a);
+          return { ...c, saldo:novoSaldo, pagamentos:[...c.pagamentos, rec], acordos:novosAcordos };
+        }));
+        setReciboData({ ...rec, cliente:clienteSel, saldoAntes, saldoDepois:novoSaldo });
+        setView("recibo");
+      }}
+      onMarcarParcela={(acordoId, parcelaIdx) => {
+        const acordo = clienteSel.acordos?.find(a => a.id === acordoId);
+        if (!acordo) return;
+        const parcela = acordo.parcelas[parcelaIdx];
+        if (!parcela || parcela.paga) return;
+        const saldoAntes = clienteSel.saldo;
+        const novoSaldo = Math.max(0, saldoAntes - parcela.valor);
+        const rec = { id:Date.now(), data:hoje(), valor:parcela.valor, desconto:0, abatimento:parcela.valor, obs:`Parcela ${parcela.numero}x do acordo de ${acordo.data}` };
+        atualizarClientes(prev => prev.map(c => {
+          if (c.id !== selectedId) return c;
+          const novosAcordos = (c.acordos||[]).map(a => {
+            if (a.id !== acordoId) return a;
+            const novasParcelas = a.parcelas.map((p, i) => i === parcelaIdx ? { ...p, paga:true } : p);
+            return { ...a, parcelas:novasParcelas };
+          });
+          return { ...c, saldo:novoSaldo, pagamentos:[...c.pagamentos, rec], acordos:novosAcordos };
+        }));
+        setReciboData({ ...rec, cliente:clienteSel, saldoAntes, saldoDepois:novoSaldo });
+        setView("recibo");
       }}
       onSalvarOcorrencia={(oc, excluirId) => {
         if (excluirId) {
@@ -485,7 +523,7 @@ export default function App() {
 }
 
 // ─── DETALHE DO CLIENTE ──────────────────────────────────────────────────────
-function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, onSalvarOcorrencia, onDeletar, perfil, onMarcarParcela }) {
+function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, onSalvarAcordo, onSalvarOcorrencia, onDeletar, perfil, onMarcarParcela, onMarcarEntrada }) {
   const st = statusInfo(cliente);
   const safeBottom = "env(safe-area-inset-bottom, 0px)";
   const [modalOpen, setModalOpen] = useState(false);
@@ -527,20 +565,24 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
       id: Date.now(),
       data: form.data,
       entrada,
+      entradaPaga: false,
       parcelas: parcelasArr,
       obs: form.obs,
       saldoOriginal: cliente.saldo
     };
-    // Sempre gera recibo do acordo (com ou sem entrada)
-    const rec = {
+    // Acordo NÃO abate nada — só registra o plano
+    // Mostra recibo do acordo como documento do plano
+    const reciboAcordo = {
       id: Date.now(),
       data: form.data,
-      valor: entrada,
+      valor: 0,
       desconto: 0,
-      abatimento: entrada,
+      abatimento: 0,
+      tipoRecibo: "acordo",
+      acordo,
       obs: `Acordo: ${entrada > 0 ? `Entrada ${fmt(entrada)} + ` : ""}${nParcelas}x de ${fmt(valorParcela)}${form.obs ? " — " + form.obs : ""}`
     };
-    onSalvarPagamento(rec, entrada, acordo);
+    onSalvarAcordo(acordo, reciboAcordo);
     setModalOpen(false);
   }
   function salvarOcorrencia() {
@@ -601,10 +643,17 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
               const hoje2 = new Date().toISOString().split("T")[0];
               return (
                 <div key={a.id} style={{ background:C.cardAlt, borderRadius:8, padding:"12px 14px", marginBottom:10, border:`1px solid ${C.border}` }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8, flexWrap:"wrap", gap:8 }}>
                     <span style={{ fontSize:12, fontWeight:700, color:C.gold }}>Acordo {ai+1} — {a.data}</span>
-                    {a.entrada > 0 && <span style={{ fontSize:12, color:C.green }}>Entrada: {fmt(a.entrada)}</span>}
-                  </div>
+                    {a.entrada > 0 && (
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <span style={{ fontSize:12, color:a.entradaPaga?C.green:C.red }}>Entrada: {fmt(a.entrada)}</span>
+                        {!a.entradaPaga && perfil === "gestor" && (
+                          <button onClick={() => onMarcarEntrada(a.id)} style={{ background:C.green, border:"none", color:"#000", borderRadius:4, padding:"2px 8px", fontSize:10, fontWeight:700, cursor:"pointer" }}>✓ Receber</button>
+                        )}
+                        {a.entradaPaga && <span style={{ fontSize:10, color:C.green, fontWeight:700 }}>✓ Recebida</span>}
+                      </div>
+                    )}
                   {a.obs && <div style={{ fontSize:12, color:C.textMed, marginBottom:8 }}>{a.obs}</div>}
                   <div style={{ display:"grid", gap:6 }}>
                     {a.parcelas.map((p, pi) => {
@@ -770,33 +819,45 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
 
 // ─── RECIBO ──────────────────────────────────────────────────────────────────
 function Recibo({ data, onVoltar, isMobile }) {
+  const isAcordo = data.tipoRecibo === "acordo";
+
   function mensagemWhatsApp() {
-    const txt = `*Bio Ozônio — Recibo de Pagamento*\n\n` +
-      `Cliente: *${data.cliente.nome}*\n` +
-      `Data: ${data.data}\n` +
-      `Valor recebido: *${fmt(data.valor)}*\n` +
-      (data.desconto > 0 ? `Desconto: ${fmt(data.desconto)}\n` : "") +
-      `Total abatido: *${fmt(data.abatimento)}*\n` +
-      `Saldo anterior: ${fmt(data.saldoAntes)}\n` +
-      `*Novo saldo devedor: ${fmt(data.saldoDepois)}*\n` +
-      (data.obs ? `\nObs: ${data.obs}\n` : "") +
-      `\n_Emitido em ${new Date().toLocaleDateString("pt-BR")} — Bio Ozônio_`;
+    let txt;
+    if (isAcordo) {
+      const a = data.acordo;
+      txt = `*Bio Ozônio — Acordo de Parcelamento*\n\n` +
+        `Cliente: *${data.cliente.nome}*\n` +
+        `Data: ${data.data}\n` +
+        `Saldo devedor: *${fmt(data.saldoAntes)}*\n` +
+        (a.entrada > 0 ? `Entrada: *${fmt(a.entrada)}*\n` : "") +
+        `Parcelas:\n` +
+        a.parcelas.map(p => `  ${p.numero}x ${fmt(p.valor)} — venc. ${p.data||"a definir"}`).join("\n") +
+        (a.obs ? `\nObs: ${a.obs}` : "") +
+        `\n\n_Emitido em ${new Date().toLocaleDateString("pt-BR")} — Bio Ozônio_`;
+    } else {
+      txt = `*Bio Ozônio — Recibo de Pagamento*\n\n` +
+        `Cliente: *${data.cliente.nome}*\n` +
+        `Data: ${data.data}\n` +
+        `Valor recebido: *${fmt(data.valor)}*\n` +
+        (data.desconto > 0 ? `Desconto: ${fmt(data.desconto)}\n` : "") +
+        `Total abatido: *${fmt(data.abatimento)}*\n` +
+        `Saldo anterior: ${fmt(data.saldoAntes)}\n` +
+        `*Novo saldo devedor: ${fmt(data.saldoDepois)}*\n` +
+        (data.obs ? `\nObs: ${data.obs}\n` : "") +
+        `\n_Emitido em ${new Date().toLocaleDateString("pt-BR")} — Bio Ozônio_`;
+    }
     const fone = data.cliente.fone?.replace(/\D/g, "");
-    const url = fone
-      ? `https://wa.me/55${fone}?text=${encodeURIComponent(txt)}`
-      : `https://wa.me/?text=${encodeURIComponent(txt)}`;
+    const url = fone ? `https://wa.me/55${fone}?text=${encodeURIComponent(txt)}` : `https://wa.me/?text=${encodeURIComponent(txt)}`;
     window.open(url, "_blank");
   }
 
   async function compartilhar() {
-    const txt = `Bio Ozônio — Recibo\nCliente: ${data.cliente.nome}\nValor: ${fmt(data.valor)}\nNovo saldo: ${fmt(data.saldoDepois)}\nData: ${data.data}`;
+    const txt = isAcordo
+      ? `Bio Ozônio — Acordo\nCliente: ${data.cliente.nome}\nSaldo: ${fmt(data.saldoAntes)}\nData: ${data.data}`
+      : `Bio Ozônio — Recibo\nCliente: ${data.cliente.nome}\nValor: ${fmt(data.valor)}\nNovo saldo: ${fmt(data.saldoDepois)}\nData: ${data.data}`;
     if (navigator.share) {
-      try {
-        await navigator.share({ title:"Recibo Bio Ozônio", text:txt });
-      } catch(e) {}
-    } else {
-      window.print();
-    }
+      try { await navigator.share({ title:"Bio Ozônio", text:txt }); } catch(e) {}
+    } else { window.print(); }
   }
 
   return (
@@ -804,36 +865,66 @@ function Recibo({ data, onVoltar, isMobile }) {
       <div style={{ background:"#fff", borderRadius:14, width:"100%", maxWidth:500, overflow:"hidden", boxShadow:"0 12px 50px rgba(0,0,0,.4)" }}>
         <div style={{ background:C.header, padding:"20px 24px", textAlign:"center", borderBottom:`3px solid ${C.gold}` }}>
           <div style={{ fontSize:9, color:C.gold, letterSpacing:4, textTransform:"uppercase", fontWeight:700 }}>Bio Ozônio</div>
-          <div style={{ fontSize:18, fontWeight:900, color:"#fff", marginTop:4 }}>RECIBO DE PAGAMENTO</div>
+          <div style={{ fontSize:18, fontWeight:900, color:"#fff", marginTop:4 }}>{isAcordo ? "ACORDO DE PARCELAMENTO" : "RECIBO DE PAGAMENTO"}</div>
           <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", marginTop:3 }}>N° {String(data.id).slice(-6)} · {data.data}</div>
         </div>
         <div style={{ padding:"20px 22px", background:"#fff", color:"#1A1A2E" }}>
           <div style={{ background:"#F4F6FA", borderRadius:8, padding:12, marginBottom:16, border:"1px solid #DDE3EC" }}>
-            <div style={{ fontSize:10, color:"#6B7280", textTransform:"uppercase", fontWeight:600 }}>Recebemos de</div>
+            <div style={{ fontSize:10, color:"#6B7280", textTransform:"uppercase", fontWeight:600 }}>{isAcordo ? "Acordo com" : "Recebemos de"}</div>
             <div style={{ fontSize:15, fontWeight:800, color:"#1A1A2E", marginTop:3 }}>{data.cliente.nome}</div>
             <div style={{ fontSize:12, color:"#4A5568" }}>{data.cliente.endereco} · {data.cliente.cidade}</div>
             <div style={{ fontSize:12, color:"#4A5568" }}>{data.cliente.fone}</div>
           </div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:14 }}>
-            {[
-              { l:"Saldo Anterior",     v:fmt(data.saldoAntes),  c:"#1A1A2E" },
-              { l:"Valor Recebido",     v:fmt(data.valor),       c:"#1A7A4A" },
-              { l:"Desconto Concedido", v:fmt(data.desconto),    c:"#B8860B" },
-              { l:"Total Abatido",      v:fmt(data.abatimento),  c:"#1A7A4A" },
-            ].map((item, i) => (
-              <div key={i} style={{ background:"#F4F6FA", borderRadius:6, padding:"10px 11px", border:"1px solid #DDE3EC" }}>
-                <div style={{ fontSize:9, color:"#6B7280", textTransform:"uppercase", fontWeight:600 }}>{item.l}</div>
-                <div style={{ fontSize:14, fontWeight:800, color:item.c, marginTop:2 }}>{item.v}</div>
+
+          {isAcordo ? (
+            <>
+              <div style={{ background:"#FDECEA", border:"2px solid #FFAAAA", borderRadius:8, padding:14, marginBottom:14, textAlign:"center" }}>
+                <div style={{ fontSize:10, color:"#C0392B", textTransform:"uppercase", fontWeight:700 }}>Saldo Total em Negociação</div>
+                <div style={{ fontSize:26, fontWeight:900, color:"#C0392B", marginTop:3 }}>{fmt(data.saldoAntes)}</div>
               </div>
-            ))}
-          </div>
-          <div style={{ background:"#FDECEA", border:"2px solid #FFAAAA", borderRadius:8, padding:14, marginBottom:14, textAlign:"center" }}>
-            <div style={{ fontSize:10, color:"#C0392B", textTransform:"uppercase", fontWeight:700, letterSpacing:1 }}>Novo Saldo Devedor</div>
-            <div style={{ fontSize:26, fontWeight:900, color:"#C0392B", marginTop:3 }}>{fmt(data.saldoDepois)}</div>
-          </div>
-          {data.obs && <div style={{ background:"#FFFDE7", border:"1px solid #F9C930", borderRadius:6, padding:11, fontSize:12, color:"#7A5000", marginBottom:14 }}><strong>Obs:</strong> {data.obs}</div>}
+              {data.acordo.entrada > 0 && (
+                <div style={{ background:"#F0FFF4", border:"1px solid #68D391", borderRadius:8, padding:12, marginBottom:14 }}>
+                  <div style={{ fontSize:10, color:"#276749", textTransform:"uppercase", fontWeight:700 }}>Entrada Acordada</div>
+                  <div style={{ fontSize:20, fontWeight:900, color:"#276749" }}>{fmt(data.acordo.entrada)}</div>
+                </div>
+              )}
+              <div style={{ marginBottom:14 }}>
+                <div style={{ fontSize:10, color:"#6B7280", textTransform:"uppercase", fontWeight:700, marginBottom:8 }}>Parcelas</div>
+                {data.acordo.parcelas.map(p => (
+                  <div key={p.numero} style={{ display:"flex", justifyContent:"space-between", padding:"8px 10px", background:"#F4F6FA", borderRadius:6, marginBottom:6, border:"1px solid #DDE3EC" }}>
+                    <span style={{ fontWeight:700, color:"#1A1A2E" }}>{p.numero}ª parcela</span>
+                    <span style={{ fontWeight:800, color:"#1A7A4A" }}>{fmt(p.valor)}</span>
+                    <span style={{ color:"#6B7280", fontSize:12 }}>Venc: {p.data||"a definir"}</span>
+                  </div>
+                ))}
+              </div>
+              {data.acordo.obs && <div style={{ background:"#FFFDE7", border:"1px solid #F9C930", borderRadius:6, padding:11, fontSize:12, color:"#7A5000", marginBottom:14 }}><strong>Obs:</strong> {data.acordo.obs}</div>}
+            </>
+          ) : (
+            <>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:14 }}>
+                {[
+                  { l:"Saldo Anterior", v:fmt(data.saldoAntes), c:"#1A1A2E" },
+                  { l:"Valor Recebido", v:fmt(data.valor), c:"#1A7A4A" },
+                  { l:"Desconto Concedido", v:fmt(data.desconto), c:"#B8860B" },
+                  { l:"Total Abatido", v:fmt(data.abatimento), c:"#1A7A4A" },
+                ].map((item, i) => (
+                  <div key={i} style={{ background:"#F4F6FA", borderRadius:6, padding:"10px 11px", border:"1px solid #DDE3EC" }}>
+                    <div style={{ fontSize:9, color:"#6B7280", textTransform:"uppercase", fontWeight:600 }}>{item.l}</div>
+                    <div style={{ fontSize:14, fontWeight:800, color:item.c, marginTop:2 }}>{item.v}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ background:"#FDECEA", border:"2px solid #FFAAAA", borderRadius:8, padding:14, marginBottom:14, textAlign:"center" }}>
+                <div style={{ fontSize:10, color:"#C0392B", textTransform:"uppercase", fontWeight:700, letterSpacing:1 }}>Novo Saldo Devedor</div>
+                <div style={{ fontSize:26, fontWeight:900, color:"#C0392B", marginTop:3 }}>{fmt(data.saldoDepois)}</div>
+              </div>
+              {data.obs && <div style={{ background:"#FFFDE7", border:"1px solid #F9C930", borderRadius:6, padding:11, fontSize:12, color:"#7A5000", marginBottom:14 }}><strong>Obs:</strong> {data.obs}</div>}
+            </>
+          )}
+
           <div style={{ textAlign:"center", paddingTop:14, borderTop:"1px dashed #DDE3EC" }}>
-            <div style={{ width:180, borderTop:"1px solid #1A1A2E", margin:"16px auto 0", paddingTop:7, fontSize:11, color:"#6B7280" }}>Assinatura do Cliente</div>
+            <div style={{ width:180, borderTop:"1px solid #1A1A2E", margin:"16px auto 0", paddingTop:7, fontSize:11, color:"#6B7280" }}>{isAcordo ? "Assinatura do Cliente" : "Assinatura do Cliente"}</div>
             <div style={{ fontSize:10, color:"#9CA3AF", marginTop:8 }}>Emitido em {new Date().toLocaleDateString("pt-BR")} — Bio Ozônio</div>
           </div>
         </div>
@@ -841,7 +932,7 @@ function Recibo({ data, onVoltar, isMobile }) {
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:16, width:"100%", maxWidth:500 }}>
         <button onClick={onVoltar} style={{ ...bOutline, textAlign:"center", minHeight:48 }}>← Voltar</button>
         <button onClick={mensagemWhatsApp} style={{ background:"#25D366", color:"#fff", border:"none", borderRadius:8, padding:"12px 18px", fontSize:14, fontWeight:800, cursor:"pointer", textAlign:"center", minHeight:48 }}>💬 WhatsApp</button>
-        <button onClick={compartilhar} style={{ ...bPrimary, marginBottom:0, minHeight:48, gridColumn:"1/-1" }}>📤 Compartilhar Recibo</button>
+        <button onClick={compartilhar} style={{ ...bPrimary, marginBottom:0, minHeight:48, gridColumn:"1/-1" }}>📤 Compartilhar</button>
       </div>
     </div>
   );
