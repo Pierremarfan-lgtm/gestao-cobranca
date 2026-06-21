@@ -245,8 +245,14 @@ export default function App() {
         setReciboData({ ...rec, cliente:clienteSel, saldoAntes, saldoDepois:Math.max(0, saldoAntes - abat) });
         setView("recibo");
       }}
-      onSalvarOcorrencia={(oc) => {
-        atualizarClientes(prev => prev.map(c => c.id !== selectedId ? c : { ...c, ocorrencias:[oc, ...c.ocorrencias] }));
+      onSalvarOcorrencia={(oc, excluirId) => {
+        if (excluirId) {
+          atualizarClientes(prev => prev.map(c => c.id !== selectedId ? c : { ...c, ocorrencias:c.ocorrencias.filter(o => o.id !== excluirId) }));
+        } else if (oc && oc.id) {
+          atualizarClientes(prev => prev.map(c => c.id !== selectedId ? c : { ...c, ocorrencias:c.ocorrencias.map(o => o.id === oc.id ? oc : o) }));
+        } else {
+          atualizarClientes(prev => prev.map(c => c.id !== selectedId ? c : { ...c, ocorrencias:[oc, ...c.ocorrencias] }));
+        }
       }}
     />;
 
@@ -420,6 +426,8 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState("pagamento");
   const [form, setForm] = useState({});
+  const [editOcId, setEditOcId] = useState(null);
+  const [editOcTexto, setEditOcTexto] = useState("");
 
   function abrirModal(tab) {
     setModalTab(tab);
@@ -441,7 +449,7 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
   function salvarOcorrencia() {
     if (!form.ocorrencia?.trim()) { alert("Descreva a ocorrência."); return; }
     const oc = { id:Date.now(), data:form.data, tipo:form.tipoOcorrencia, texto:form.ocorrencia };
-    onSalvarOcorrencia(oc);
+    onSalvarOcorrencia(oc, null);
     setModalOpen(false);
   }
 
@@ -513,9 +521,23 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
             <div key={o.id} style={{ background:C.cardAlt, borderRadius:8, padding:"12px 14px", marginBottom:10, border:`1px solid ${C.border}` }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6, gap:8 }}>
                 <Badge label={o.tipo} cor={C.blue} bg={C.blueBg} />
-                <span style={{ fontSize:11, color:C.textLow, fontWeight:600, flexShrink:0 }}>{o.data}</span>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ fontSize:11, color:C.textLow, fontWeight:600 }}>{o.data}</span>
+                  <button onClick={() => { setEditOcId(o.id); setEditOcTexto(o.texto); }} style={{ background:"none", border:`1px solid ${C.gold}`, color:C.gold, borderRadius:6, padding:"2px 8px", fontSize:11, cursor:"pointer", fontWeight:700 }}>✏️</button>
+                  <button onClick={() => { if(window.confirm("Excluir esta ocorrência?")) { onSalvarOcorrencia(null, o.id); } }} style={{ background:"none", border:`1px solid ${C.red}`, color:C.red, borderRadius:6, padding:"2px 8px", fontSize:11, cursor:"pointer", fontWeight:700 }}>🗑️</button>
+                </div>
               </div>
-              <div style={{ fontSize:13, color:C.textHigh, lineHeight:1.5 }}>{o.texto}</div>
+              {editOcId === o.id ? (
+                <div>
+                  <textarea value={editOcTexto} onChange={e => setEditOcTexto(e.target.value)} style={{ ...iSt, height:80, resize:"vertical", marginBottom:8 }} />
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={() => { onSalvarOcorrencia({ ...o, texto:editOcTexto }, null); setEditOcId(null); }} style={{ ...bPrimary, flex:1, marginBottom:0, minHeight:38, fontSize:13 }}>💾 Salvar</button>
+                    <button onClick={() => setEditOcId(null)} style={{ ...bPrimary, flex:1, marginBottom:0, minHeight:38, fontSize:13, background:C.card, color:C.textMed }}>Cancelar</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize:13, color:C.textHigh, lineHeight:1.5 }}>{o.texto}</div>
+              )}
             </div>
           ))}
         </div>
