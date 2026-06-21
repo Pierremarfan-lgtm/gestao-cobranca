@@ -155,6 +155,7 @@ export default function App() {
 
   // ── Carrega dados do Firebase ──
   useEffect(() => {
+    const timeout = setTimeout(() => setCarregando(false), 5000); // segurança: 5s máx
     async function carregar() {
       try {
         const snap = await getDoc(doc(db, "cobranca-viviane", "dados"));
@@ -172,10 +173,12 @@ export default function App() {
       } catch(e) {
         console.error("Firebase erro:", e);
       } finally {
+        clearTimeout(timeout);
         setCarregando(false);
       }
     }
     carregar();
+    return () => clearTimeout(timeout);
   }, []);
 
   // ── Salva dados no Firebase ──
@@ -265,7 +268,7 @@ export default function App() {
   const navH       = isMobile ? 60 : 0;
 
   if (carregando)
-    return <div style={{ background:C.bg, minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", color:C.gold, fontSize:18, fontWeight:700, fontFamily:"'Segoe UI',sans-serif" }}>⏳ Carregando...</div>;
+    return <div style={{ background:"#0D1B2A", minHeight:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", color:"#F0C040", fontSize:18, fontWeight:700, fontFamily:"'Segoe UI',sans-serif" }}>⏳ Carregando...</div>;
 
   if (!usuario)
     return <Login vendedores={vendedores} senhaGestor={senhaGestor} onLogin={setUsuario} isMobile={isMobile} />;
