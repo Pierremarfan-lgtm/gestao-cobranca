@@ -573,7 +573,7 @@ function ClienteDetalhe({ cliente, onVoltar, isMobile, navH, onSalvarPagamento, 
                   {TIPOS_OC.map(t => <option key={t}>{t}</option>)}
                 </select>
                 <label style={lbl}>Descrição</label>
-                <textarea value={form.ocorrencia||""} onChange={e => setForm(p => ({ ...p, ocorrencia:e.target.value }))} placeholder="Descreva o que aconteceu…" style={{ ...iSt, height:100, resize:"none" }} />
+                <textarea value={form.ocorrencia||""} onChange={e => setForm(p => ({ ...p, ocorrencia:e.target.value }))} placeholder="Descreva o que aconteceu…" style={{ ...iSt, height:100, resize:"vertical" }} />
                 <button onClick={salvarOcorrencia} style={{ ...bPrimary, minHeight:50 }}>📝 Registrar Ocorrência</button>
               </>}
             </div>
@@ -635,6 +635,6 @@ function Recibo({ data, onVoltar, isMobile }) {
 
 // ─── ESTILOS BASE ────────────────────────────────────────────────────────────
 const lbl     = { display:"block", fontSize:10, color:C.textLow, fontWeight:700, marginBottom:5, textTransform:"uppercase", letterSpacing:.6 };
-const iSt     = { display:"block", width:"100%", boxSizing:"border-box", background:C.input, border:`1.5px solid ${C.borderMed}`, borderRadius:8, padding:"12px 13px", color:C.textWhite, fontSize:16, marginBottom:12, outline:"none", fontFamily:"inherit" };
+const iSt     = { display:"block", width:"100%", boxSizing:"border-box", background:C.input, border:`1.5px solid ${C.borderMed}`, borderRadius:8, padding:"12px 13px", color:C.textWhite, fontSize:16, marginBottom:12, outline:"none", fontFamily:"inherit", WebkitUserSelect:"text", userSelect:"text", WebkitAppearance:"none" };
 const bPrimary= { background:C.gold, color:"#000", border:"none", borderRadius:8, padding:"12px 18px", fontSize:14, fontWeight:800, cursor:"pointer", display:"block", width:"100%", textAlign:"center", marginBottom:8 };
 const bOutline= { background:"transparent", color:C.gold, border:`1.5px solid ${C.gold}`, borderRadius:8, padding:"11px 16px", fontSize:13, fontWeight:700, cursor:"pointer", display:"inline-block" };
