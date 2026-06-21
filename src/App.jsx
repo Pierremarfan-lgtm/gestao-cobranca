@@ -155,14 +155,20 @@ export default function App() {
 
   // ── Carrega dados do Firebase ──
   useEffect(() => {
-    const timeout = setTimeout(() => setCarregando(false), 5000); // segurança: 5s máx
+    const timeout = setTimeout(() => setCarregando(false), 8000);
     async function carregar() {
       try {
         const snap = await getDoc(doc(db, "cobranca-viviane", "dados"));
         if (snap.exists()) {
-          const dados = snap.data().clientes;
-          if (snap.data().vendedores) setVendedores(snap.data().vendedores);
+          const dados = snap.data().clientes || [];
+          // Vendedores — se não existir no Firebase usa o padrão
+          const vends = snap.data().vendedores;
+          if (vends && Array.isArray(vends) && vends.length > 0) {
+            setVendedores(vends);
+          }
+          // Senha do gestor
           if (snap.data().senhaGestor) setSenhaGestor(snap.data().senhaGestor);
+          // Clientes
           const fixos = CLIENTES_RAW.map(c => {
             const salvo = dados.find(s => s.id === c.id);
             return salvo ? { ...c, saldo:salvo.saldo, ocorrencias:salvo.ocorrencias||[], pagamentos:salvo.pagamentos||[], vendedor:salvo.vendedor||"Viviane" } : { ...c, ocorrencias:[], pagamentos:[], vendedor:"Viviane" };
@@ -245,9 +251,11 @@ export default function App() {
   if (!usuario)
     return <Login vendedores={vendedores} senhaGestor={senhaGestor} onLogin={setUsuario} isMobile={isMobile}
       onCadastrarVendedor={(nome, senha) => {
-        const novos = [...vendedores, { nome, senha }];
-        setVendedores(novos);
-        salvarFirebase(clientes, novos);
+        setVendedores(prev => {
+          const novos = [...prev, { nome, senha }];
+          salvarFirebase(clientes, novos, senhaGestor);
+          return novos;
+        });
       }}
     />;
 
@@ -323,7 +331,7 @@ export default function App() {
               { label:"Total Inadimplente", value:fmt(totalGeral),      cor:C.red,   icon:"⚠️" },
               { label:"Total Recebido",     value:fmt(totalRecebido),   cor:C.green, icon:"✅" },
               { label:"Saldo em Aberto",    value:fmt(saldoAtual),      cor:C.gold,  icon:"💰" },
-              { label:"Contatados",         value:`${contatados}/55`,   cor:C.blue,  icon:"📞" },
+              { label:"Contatados",         value:`${contatados}/${clientesVisiveis.length}`,   cor:C.blue,  icon:"📞" },
             ].map((k, i) => (
               <div key={i} style={{ background:C.card, border:`1px solid ${C.border}`, borderLeft:`4px solid ${k.cor}`, borderRadius:10, padding:isMobile?"12px 12px":"18px 20px", boxShadow:C.shadow }}>
                 <div style={{ fontSize:isMobile?18:24, marginBottom:4 }}>{k.icon}</div>
@@ -354,7 +362,7 @@ export default function App() {
               <div style={{ fontWeight:800, color:C.textWhite, marginBottom:12, fontSize:13, paddingBottom:8, borderBottom:`1px solid ${C.border}` }}>
                 🔴 <span style={{ color:C.red }}>Maiores Saldos</span>
               </div>
-              {[...clientes].sort((a, b) => b.saldo - a.saldo).slice(0, isMobile?5:6).map((c, i) => (
+              {[...clientesVisiveis].sort((a, b) => b.saldo - a.saldo).slice(0, isMobile?5:6).map((c, i) => (
                 <div key={c.id} onClick={() => { setSelectedId(c.id); setView("cliente"); }}
                   style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0", borderBottom:`1px solid ${C.border}`, cursor:"pointer", minHeight:44 }}>
                   <span style={{ background:i<3?C.red:C.border, color:"#fff", borderRadius:6, padding:"2px 7px", fontSize:11, fontWeight:800, minWidth:24, textAlign:"center", flexShrink:0 }}>{i+1}</span>
@@ -366,7 +374,7 @@ export default function App() {
                 </div>
               ))}
               <button onClick={() => setView("lista")} style={{ ...bOutline, marginTop:12, width:"100%", textAlign:"center", display:"block", minHeight:44 }}>
-                Ver todos os 55 clientes →
+                Ver todos os {clientesVisiveis.length} clientes →
               </button>
             </div>
 
@@ -374,7 +382,7 @@ export default function App() {
               <div style={{ fontWeight:800, color:C.textWhite, marginBottom:12, fontSize:13, paddingBottom:8, borderBottom:`1px solid ${C.border}` }}>
                 📋 <span style={{ color:C.blue }}>Últimas Ocorrências</span>
               </div>
-              {clientes.filter(c => c.ocorrencias.length > 0).sort((a, b) => b.ocorrencias[0].id - a.ocorrencias[0].id).slice(0, 5).map(c => (
+              {clientesVisiveis.filter(c => c.ocorrencias.length > 0).sort((a, b) => b.ocorrencias[0].id - a.ocorrencias[0].id).slice(0, 5).map(c => (
                 <div key={c.id} onClick={() => { setSelectedId(c.id); setView("cliente"); }}
                   style={{ padding:"10px 0", borderBottom:`1px solid ${C.border}`, cursor:"pointer", minHeight:44 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
@@ -385,7 +393,7 @@ export default function App() {
                   <div style={{ fontSize:12, color:C.textMed, marginTop:3 }}>{c.ocorrencias[0].texto.slice(0, 55)}{c.ocorrencias[0].texto.length > 55 ? "…" : ""}</div>
                 </div>
               ))}
-              {clientes.filter(c => c.ocorrencias.length > 0).length === 0 &&
+              {clientesVisiveis.filter(c => c.ocorrencias.length > 0).length === 0 &&
                 <div style={{ color:C.textLow, fontSize:13, textAlign:"center", padding:20 }}>Nenhuma ocorrência ainda.</div>}
             </div>
           </div>
@@ -402,10 +410,10 @@ export default function App() {
             <select value={filtroCidade} onChange={e => setFiltroCidade(e.target.value)} style={{ ...iSt, flex:1, marginBottom:0 }}>
               {cidades.map(c => <option key={c}>{c}</option>)}
             </select>
-            <select value={filtroVendedor} onChange={e => setFiltroVendedor(e.target.value)} style={{ ...iSt, flex:1, marginBottom:0 }}>
+            {usuario.perfil === "gestor" && <select value={filtroVendedor} onChange={e => setFiltroVendedor(e.target.value)} style={{ ...iSt, flex:1, marginBottom:0 }}>
               <option value="Todos">👤 Todos</option>
               {vendedores.map(v => <option key={v.nome} value={v.nome}>{v.nome}</option>)}
-            </select>
+            </select>}
           </div>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
             <div style={{ background:C.blueBg, border:`1px solid ${C.blue}44`, borderRadius:8, padding:"8px 14px", fontSize:12, fontWeight:700, color:C.blue }}>
