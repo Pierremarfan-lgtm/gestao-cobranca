@@ -217,8 +217,8 @@ export default function App() {
   const clienteSel = clientes.find(c => c.id === selectedId);
   const cidades    = ["Todas", ...new Set(clientes.map(c => c.cidade))];
 
-  // Vendedor só vê seus próprios clientes
-  const clientesVisiveis = usuario.perfil === "vendedor"
+  // Vendedor só vê seus próprios clientes (usa optional chaining para quando usuario=null)
+  const clientesVisiveis = usuario?.perfil === "vendedor"
     ? clientes.filter(c => c.vendedor === usuario.nome)
     : clientes;
 
@@ -234,34 +234,6 @@ export default function App() {
     const v  = filtroVendedor === "Todos" || c.vendedor === filtroVendedor;
     return t && ci && v;
   }), [clientesVisiveis, filtro, filtroCidade, filtroVendedor]);
-
-  function abrirModal(tab) {
-    setModalTab(tab);
-    setForm({ data:hoje(), valorRecebido:"", desconto:"", parcelas:2, obs:"", ocorrencia:"", tipoOcorrencia:TIPOS_OC[0] });
-    setModalOpen(true);
-  }
-  const fp = s => parseFloat((s || "").replace(",", ".")) || 0;
-
-  function salvarPagamento() {
-    const val = fp(form.valorRecebido), desc = fp(form.desconto);
-    if (val <= 0 && desc <= 0) { alert("Informe valor recebido ou desconto."); return; }
-    const abat = val + desc;
-    const rec  = { id:Date.now(), data:form.data, valor:val, desconto:desc, abatimento:abat, obs:form.obs };
-    const saldoAntes = clienteSel.saldo;
-    setClientes(prev => prev.map(c => c.id !== selectedId ? c : { ...c, saldo:Math.max(0, c.saldo - abat), pagamentos:[...c.pagamentos, rec] }));
-    setReciboData({ ...rec, cliente:clienteSel, saldoAntes, saldoDepois:Math.max(0, saldoAntes - abat) });
-    setModalOpen(false); setView("recibo");
-  }
-  function salvarOcorrencia() {
-    if (!form.ocorrencia?.trim()) { alert("Descreva a ocorrência."); return; }
-    const oc = { id:Date.now(), data:form.data, tipo:form.tipoOcorrencia, texto:form.ocorrencia };
-    setClientes(prev => prev.map(c => c.id !== selectedId ? c : { ...c, ocorrencias:[oc, ...c.ocorrencias] }));
-    setModalOpen(false);
-  }
-  function parcEstimada() {
-    const entrada = fp(form.valorRecebido);
-    return clienteSel ? Math.max(0, clienteSel.saldo - entrada) / (form.parcelas || 1) : 0;
-  }
 
   // ── Safe area bottom para iPhones com notch ──
   const safeBottom = "env(safe-area-inset-bottom, 0px)";
